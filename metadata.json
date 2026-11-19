@@ -1,0 +1,8 @@
+{
+  "name": "MAIS CÍLIOS",
+  "description": "Sistema de confirmação de atendimentos, retornos e gestão financeira do estúdio MAIS CÍLIOS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
