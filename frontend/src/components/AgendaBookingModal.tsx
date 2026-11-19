@@ -249,21 +249,22 @@ export function AgendaBookingModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-[#331824]/45 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-50 bg-overlay/45 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
       role="dialog"
+      aria-labelledby="agenda-booking-title"
       aria-modal="true"
     >
-      <div className="w-full sm:max-w-xl bg-white rounded-t-3xl sm:rounded-3xl border border-[#EBC5D5] shadow-xl overflow-hidden max-h-[94vh] flex flex-col">
-        <div className="px-5 py-4 border-b border-[#F5E4EC] flex items-center justify-between bg-[#FFF9FB]">
+      <div className="w-full sm:max-w-xl bg-surface rounded-t-3xl sm:rounded-3xl border border-border shadow-dialog overflow-hidden max-h-[94vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-background">
           <div>
-            <h3 className="font-display text-2xl font-bold text-[#831843]">
+            <h3 id="agenda-booking-title" className="font-display text-2xl font-bold text-brand-strong">
               {state.kind === 'confirm-request'
                 ? 'Adicionar à agenda'
                 : state.kind === 'edit'
                   ? 'Editar / Remarcar agendamento'
                   : 'Novo agendamento'}
             </h3>
-            <p className="text-xs text-[#7A5464]">
+            <p className="text-xs text-text-secondary">
               Agenda da {profLabel} · Horário de Brasília
             </p>
           </div>
@@ -271,7 +272,7 @@ export function AgendaBookingModal({
             type="button"
             onClick={onClose}
             aria-label="Fechar janela"
-            className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-[#6E4959] hover:bg-[#FDF2F6]"
+            className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center btn-ghost"
           >
             <X className="w-5 h-5" />
           </button>
@@ -279,14 +280,14 @@ export function AgendaBookingModal({
 
         <form onSubmit={(e) => void handleSubmit(e)} className="p-5 space-y-4 overflow-y-auto">
           {error && (
-            <div className="p-3 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-sm text-[#9F1239]">
+            <div className="p-3 rounded-xl bg-error-soft border border-error-border text-sm text-error">
               {error}
             </div>
           )}
 
           {state.kind === 'confirm-request' && (
-            <div className="p-3.5 rounded-2xl bg-[#FDF2F6] border border-[#EBC5D5] space-y-1 text-xs text-[#5E3A4A]">
-              <p className="font-semibold text-[#831843]">
+            <div className="p-3.5 rounded-2xl bg-brand-soft border border-border space-y-1 text-xs text-text-secondary">
+              <p className="font-semibold text-brand-strong">
                 Solicitação de retorno ({getReturnOptionLabel(state.request.returnOption)})
               </p>
               {state.request.preferredTimes.length > 0 && (
@@ -300,7 +301,7 @@ export function AgendaBookingModal({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-[#5E3A4A] mb-1">
+              <label className="block text-xs font-semibold text-text-secondary mb-1" htmlFor="agendabookingmodal-field-1">
                 Nome da cliente
               </label>
               <input
@@ -310,14 +311,14 @@ export function AgendaBookingModal({
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 placeholder="Nome completo"
-                className={`w-full min-h-[44px] px-3.5 py-2 text-sm border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58] ${
-                  state.kind === 'confirm-request' ? 'bg-[#F8F3F5]' : 'bg-[#FFF9FB]'
-                }`}
+                className={`field-control w-full min-h-[44px] px-3.5 py-2 text-base border rounded-xl ${
+                  state.kind === 'confirm-request' ? 'bg-brand-soft' : 'bg-surface'
+                }`} id="agendabookingmodal-field-1"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#5E3A4A] mb-1">
+              <label className="block text-xs font-semibold text-text-secondary mb-1" htmlFor="agendabookingmodal-field-2">
                 WhatsApp
               </label>
               <input
@@ -327,16 +328,16 @@ export function AgendaBookingModal({
                 value={whatsapp}
                 onChange={(e) => setWhatsapp(formatBrazilPhone(e.target.value))}
                 placeholder="(00) 00000-0000"
-                className={`w-full min-h-[44px] px-3.5 py-2 text-sm border border-[#EED2DE] rounded-xl text-[#331824] tabular-nums focus:outline-none focus:border-[#9D2A58] ${
-                  state.kind === 'confirm-request' ? 'bg-[#F8F3F5]' : 'bg-[#FFF9FB]'
-                }`}
+                className={`field-control w-full min-h-[44px] px-3.5 py-2 text-base border rounded-xl tabular-nums ${
+                  state.kind === 'confirm-request' ? 'bg-brand-soft' : 'bg-surface'
+                }`} id="agendabookingmodal-field-2"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-[#5E3A4A] mb-1">
+              <label className="block text-xs font-semibold text-text-secondary mb-1" htmlFor="agendabookingmodal-field-3">
                 Data do atendimento
               </label>
               <input
@@ -344,16 +345,16 @@ export function AgendaBookingModal({
                 required
                 value={appointmentDate}
                 onChange={(e) => e.target.value && setAppointmentDate(e.target.value)}
-                className="w-full min-h-[44px] px-3.5 py-2 text-sm font-semibold bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] tabular-nums focus:outline-none focus:border-[#9D2A58]"
+                className="w-full min-h-[44px] px-3.5 py-2 font-semibold border rounded-xl tabular-nums field-control text-base" id="agendabookingmodal-field-3"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#5E3A4A] mb-1">
+              <label className="block text-xs font-semibold text-text-secondary mb-1" htmlFor="agendabookingmodal-field-4">
                 Horário definitivo (HH:MM)
               </label>
               <div className="relative">
-                <Clock className="w-4 h-4 text-[#9D2A58] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Clock className="w-4 h-4 text-brand absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   inputMode="numeric"
@@ -362,17 +363,17 @@ export function AgendaBookingModal({
                   value={appointmentTime}
                   onChange={(e) => setAppointmentTime(formatTimeInputHHMM(e.target.value))}
                   placeholder="Ex: 14:30"
-                  className="w-full min-h-[44px] pl-10 pr-3.5 py-2 text-sm font-semibold bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] tabular-nums focus:outline-none focus:border-[#9D2A58]"
+                  className="w-full min-h-[44px] pl-10 pr-3.5 py-2 font-semibold border rounded-xl tabular-nums field-control text-base" id="agendabookingmodal-field-4"
                 />
               </div>
-              <span className="mt-1 block text-[11px] text-[#7A5464]">
+              <span className="mt-1 block text-[11px] text-text-secondary">
                 Digite manualmente no formato 24h (ex: 09:00, 14:30)
               </span>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#5E3A4A] mb-1.5">
+            <label className="block text-xs font-semibold text-text-secondary mb-1.5" htmlFor="agendabookingmodal-field-5">
               Serviço / procedimento ({profLabel})
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -383,15 +384,15 @@ export function AgendaBookingModal({
                     key={svc.id}
                     className={`min-h-[42px] px-3 py-2 rounded-xl border text-xs sm:text-sm flex items-center gap-2.5 cursor-pointer transition-colors ${
                       checked
-                        ? 'bg-[#FDF2F6] border-[#9D2A58] text-[#831843] font-semibold'
-                        : 'bg-[#FFF9FB] border-[#EED2DE] text-[#331824] hover:border-[#D99BB5]'
+                        ? 'choice-selected font-semibold'
+                        : 'choice-idle'
                     }`}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleService(svc.name)}
-                      className="w-4 h-4 accent-[#9D2A58] rounded"
+                      className="w-4 h-4 accent-brand-strong rounded" id="agendabookingmodal-field-5"
                     />
                     <span className="leading-tight">{svc.name}</span>
                   </label>
@@ -404,12 +405,12 @@ export function AgendaBookingModal({
               value={customProcedure}
               onChange={(e) => setCustomProcedure(e.target.value)}
               placeholder="Outro serviço ou observação do procedimento (opcional)"
-              className="mt-2 w-full min-h-[42px] px-3.5 py-2 text-sm bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+              className="mt-2 w-full min-h-[44px] px-3.5 py-2 border rounded-xl field-control text-base"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#5E3A4A] mb-1">
+            <label className="block text-xs font-semibold text-text-secondary mb-1" htmlFor="agendabookingmodal-field-6">
               Observações (opcional)
             </label>
             <textarea
@@ -417,7 +418,7 @@ export function AgendaBookingModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Detalhes adicionais sobre o horário ou atendimento..."
-              className="w-full px-3.5 py-2 text-sm bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+              className="w-full px-3.5 py-2 border rounded-xl field-control text-base" id="agendabookingmodal-field-6"
             />
           </div>
 
@@ -425,14 +426,14 @@ export function AgendaBookingModal({
             <button
               type="button"
               onClick={onClose}
-              className="min-h-[46px] px-4 py-2 rounded-xl bg-[#FDF2F6] hover:bg-[#F9E3EC] text-[#6E4959] text-sm font-semibold"
+              className="min-h-[46px] px-4 py-2 rounded-xl text-sm font-semibold btn-secondary"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 min-h-[46px] px-4 py-2 rounded-xl bg-[#9D2A58] hover:bg-[#831843] disabled:opacity-50 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+              className="flex-1 min-h-[46px] px-4 py-2 rounded-xl disabled:opacity-50 text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors btn-primary"
             >
               <CalendarPlus className="w-4 h-4" />
               <span>

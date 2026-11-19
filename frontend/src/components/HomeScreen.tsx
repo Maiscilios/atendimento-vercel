@@ -13,17 +13,17 @@ export function HomeScreen({
   onOpenStaffAccess,
 }: HomeScreenProps) {
   return (
-    <div className="min-h-screen flex flex-col bg-[#FFF9FB]">
-      <header className="w-full border-b border-[#F3DCE6] bg-white/90 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-8">
-          <span className="font-display text-2xl font-bold tracking-wide text-[#831843] whitespace-nowrap shrink-0">
+    <div className="min-h-screen flex flex-col bg-background">
+      <header className="w-full border-b border-border bg-surface/90 backdrop-blur-sm">
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-3 sm:gap-8">
+          <span className="font-display text-xl sm:text-2xl font-bold tracking-wide text-brand-strong whitespace-nowrap shrink-0">
             MAIS CÍLIOS
           </span>
 
           <button
             type="button"
             onClick={onOpenStaffAccess}
-            className="min-h-[40px] px-4 py-2 inline-flex items-center gap-2 text-xs sm:text-sm font-medium text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] border border-[#F1D8E2] rounded-xl transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[40px] px-3 sm:px-4 py-2 inline-flex items-center gap-2 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap shrink-0 btn-secondary"
           >
             <Lock className="w-4 h-4" />
             <span>
@@ -34,12 +34,12 @@ export function HomeScreen({
       </header>
 
       <main className="flex-1 flex flex-col justify-center px-4 sm:px-8 py-8 sm:py-12">
-        <div className="w-full max-w-5xl mx-auto bg-white border border-[#F1D8E2] rounded-3xl p-7 sm:p-12 md:p-16 shadow-[0_6px_28px_rgba(131,24,67,0.05)] flex flex-col justify-center">
+        <div className="w-full max-w-5xl mx-auto bg-surface border border-border border-t-4 border-t-brand rounded-3xl p-7 sm:p-12 md:p-16 shadow-card flex flex-col justify-center">
           <div className="text-center">
-            <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-[#831843] [text-wrap:balance]">
+            <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-brand-strong [text-wrap:balance]">
               Confirme seu atendimento
             </h1>
-            <p className="mt-2 text-base sm:text-lg text-[#6E4959]">
+            <p className="mt-2 text-base sm:text-lg text-text-secondary">
               Com quem foi realizado seu atendimento?
             </p>
 
@@ -47,33 +47,33 @@ export function HomeScreen({
               <button
                 type="button"
                 onClick={() => onSelectProfessional('lais')}
-                className="group min-h-[112px] sm:min-h-[140px] px-7 py-6 rounded-2xl bg-[#9D2A58] hover:bg-[#831843] active:scale-[0.99] text-white flex items-center justify-between transition-all shadow-sm"
+                className="group min-h-[112px] sm:min-h-[140px] px-7 py-6 rounded-2xl active:scale-[0.99] flex items-center justify-between transition-all professional-card professional-card-featured"
               >
                 <div className="text-left">
                   <span className="block text-2xl sm:text-3xl font-bold tracking-wide">
                     LAÍS
                   </span>
-                  <span className="block text-sm sm:text-base text-white/85 mt-1">
+                  <span className="block text-sm sm:text-base text-text-secondary mt-1">
                     Cílios e sobrancelhas
                   </span>
                 </div>
-                <ArrowRight className="w-6 h-6 sm:w-7 sm:h-7 text-white/90 group-hover:translate-x-1 transition-transform shrink-0" />
+                <ArrowRight className="w-6 h-6 sm:w-7 sm:h-7 text-brand group-hover:translate-x-1 transition-transform shrink-0" />
               </button>
 
               <button
                 type="button"
                 onClick={() => onSelectProfessional('duda')}
-                className="group min-h-[112px] sm:min-h-[140px] px-7 py-6 rounded-2xl bg-[#FDF2F6] hover:bg-[#F9E3EC] active:scale-[0.99] text-[#831843] border border-[#EBC5D5] flex items-center justify-between transition-all"
+                className="group min-h-[112px] sm:min-h-[140px] px-7 py-6 rounded-2xl active:scale-[0.99] flex items-center justify-between transition-all professional-card"
               >
                 <div className="text-left">
                   <span className="block text-2xl sm:text-3xl font-bold tracking-wide">
                     DUDA
                   </span>
-                  <span className="block text-sm sm:text-base text-[#7A5464] mt-1">
+                  <span className="block text-sm sm:text-base text-text-secondary mt-1">
                     Unhas e cuidados
                   </span>
                 </div>
-                <ArrowRight className="w-6 h-6 sm:w-7 sm:h-7 text-[#9D2A58] group-hover:translate-x-1 transition-transform shrink-0" />
+                <ArrowRight className="w-6 h-6 sm:w-7 sm:h-7 text-brand group-hover:translate-x-1 transition-transform shrink-0" />
               </button>
             </div>
           </div>

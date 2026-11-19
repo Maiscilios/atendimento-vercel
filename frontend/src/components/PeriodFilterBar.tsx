@@ -43,7 +43,7 @@ const PRESET_OPTIONS: Array<{ id: PeriodPreset; label: string }> = [
 export function PeriodFilterBar({ value, onChange }: PeriodFilterBarProps) {
   return (
     <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:flex-wrap">
-      <div className="flex items-center gap-1 p-1 bg-[#F9ECF2] rounded-xl overflow-x-auto">
+      <div className="flex items-center gap-1 p-1 bg-brand-soft rounded-xl overflow-x-auto">
         {PRESET_OPTIONS.map((opt) => {
           const active = value.preset === opt.id;
           return (
@@ -53,9 +53,9 @@ export function PeriodFilterBar({ value, onChange }: PeriodFilterBarProps) {
               onClick={() => onChange(computeRangeForPreset(opt.id))}
               className={`min-h-[38px] px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 active
-                  ? 'bg-white text-[#831843] shadow-sm'
-                  : 'text-[#6E4959] hover:text-[#331824]'
-              }`}
+                  ? 'tab-active'
+                  : 'tab-idle'
+              }`} aria-pressed={active}
             >
               {opt.label}
             </button>
@@ -65,22 +65,22 @@ export function PeriodFilterBar({ value, onChange }: PeriodFilterBarProps) {
 
       {value.preset === 'custom' && (
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-1.5 text-xs text-[#6E4959]">
+          <label className="flex items-center gap-1.5 text-xs text-text-secondary">
             <span>De</span>
             <input
               type="date"
               value={value.startDate}
               onChange={(e) => onChange({ ...value, startDate: e.target.value })}
-              className="min-h-[38px] px-2.5 py-1.5 text-xs bg-white border border-[#EED2DE] rounded-lg text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+              className="min-h-[44px] px-2.5 py-1.5 border rounded-lg field-control text-base"
             />
           </label>
-          <label className="flex items-center gap-1.5 text-xs text-[#6E4959]">
+          <label className="flex items-center gap-1.5 text-xs text-text-secondary">
             <span>Até</span>
             <input
               type="date"
               value={value.endDate}
               onChange={(e) => onChange({ ...value, endDate: e.target.value })}
-              className="min-h-[38px] px-2.5 py-1.5 text-xs bg-white border border-[#EED2DE] rounded-lg text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+              className="min-h-[44px] px-2.5 py-1.5 border rounded-lg field-control text-base"
             />
           </label>
         </div>

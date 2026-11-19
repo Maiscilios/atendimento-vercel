@@ -3,6 +3,37 @@
 @theme {
   --font-display: "Cormorant Garamond", Georgia, serif;
   --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+
+  /* Brand accents are decorative; strong shades carry readable text/actions. */
+  --color-brand: #C084C6;
+  --color-brand-strong: #78367E;
+  --color-brand-hover: #5E2965;
+  --color-brand-soft: #F7EDF8;
+  --color-brand-selected: #EEDCF0;
+  --color-background: #FCF8FD;
+  --color-surface: #FFFFFF;
+  --color-border: #E8D6EB;
+  --color-text-primary: #322337;
+  --color-text-secondary: #6E5972;
+  --color-placeholder: #7C6580;
+  --color-overlay: var(--color-text-primary);
+
+  --color-success: #166534;
+  --color-success-soft: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-success-selected: #DCFCE7;
+  --color-success-hover: #14532D;
+  --color-error: #9F1239;
+  --color-error-soft: #FFF1F2;
+  --color-error-border: #FECDD3;
+  --color-error-hover: #881337;
+  --color-warning: #92400E;
+  --color-warning-soft: #FFFBEB;
+  --color-warning-border: #FDE68A;
+  --color-warning-selected: #FEF3C7;
+
+  --shadow-card: 0 4px 24px color-mix(in srgb, var(--color-brand-strong) 5%, transparent);
+  --shadow-dialog: 0 16px 48px color-mix(in srgb, var(--color-text-primary) 14%, transparent);
 }
 
 @layer base {
@@ -11,12 +42,122 @@
     scroll-behavior: smooth;
   }
 
+  body {
+    @apply bg-background text-text-primary antialiased;
+  }
+
+  ::selection {
+    @apply bg-brand-selected text-brand-strong;
+  }
+
   button,
   a,
   input,
   select,
   textarea {
     font-family: inherit;
+  }
+
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-brand-strong);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-brand) 35%, transparent);
+  }
+
+  :where(button, input, select, textarea):disabled {
+    cursor: not-allowed;
+  }
+
+  :where(input, select, textarea)::placeholder {
+    color: var(--color-placeholder);
+    opacity: 1;
+  }
+}
+
+@layer components {
+  /* Layout, dimensions, typography and loading states stay with each component. */
+  .btn-primary {
+    @apply bg-brand-strong text-surface border border-transparent transition-colors;
+    &:hover:not(:disabled) { @apply bg-brand-hover; }
+  }
+
+  .btn-secondary {
+    @apply bg-brand-soft text-brand-strong border border-border transition-colors;
+    &:hover:not(:disabled) { @apply bg-brand-selected; }
+  }
+
+  .btn-ghost {
+    @apply text-brand-strong transition-colors;
+    &:hover:not(:disabled) { @apply bg-brand-soft; }
+  }
+
+  .btn-danger {
+    @apply text-error transition-colors;
+    &:hover:not(:disabled) { @apply bg-error-soft; }
+  }
+
+  .btn-danger-solid {
+    @apply bg-error text-surface border border-transparent transition-colors;
+    &:hover:not(:disabled) { @apply bg-error-hover; }
+  }
+
+  .btn-success {
+    @apply bg-success text-surface transition-colors;
+    &:hover:not(:disabled) { @apply bg-success-hover; }
+  }
+
+  .btn-success-soft {
+    @apply bg-success-soft text-success border border-success-border transition-colors;
+    &:hover:not(:disabled) { @apply bg-success-selected; }
+  }
+
+  .field-control {
+    @apply bg-surface border border-border text-text-primary placeholder:text-placeholder transition-colors;
+    accent-color: var(--color-brand-strong);
+    &:focus {
+      border-color: var(--color-brand);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand) 25%, transparent);
+    }
+    &:disabled { @apply bg-brand-soft text-text-secondary; }
+    &:user-invalid { border-color: var(--color-error); }
+  }
+
+  .choice-selected {
+    @apply bg-brand-selected border-brand text-brand-strong;
+  }
+
+  .choice-idle {
+    @apply bg-surface border-border text-text-primary;
+    &:hover:not(:disabled) { @apply bg-brand-soft border-brand; }
+  }
+
+  .tab-active {
+    @apply bg-brand-selected text-brand-strong border border-brand;
+  }
+
+  .tab-idle {
+    @apply text-text-secondary border border-transparent;
+    &:hover:not(:disabled) { @apply bg-brand-soft text-brand-strong; }
+  }
+
+  .metric-value { @apply text-brand-strong; }
+
+  .metric-card-featured { @apply border border-border border-t-[3px] border-t-brand; }
+  .metric-card-accent { @apply border border-border border-l-[3px] border-l-brand; }
+
+  .chart-grid {
+    background-image: linear-gradient(to top, var(--color-border) 1px, transparent 1px);
+    background-size: 100% 25%;
+  }
+
+  .professional-card {
+    @apply bg-surface text-brand-strong border border-border shadow-card;
+    &:hover { @apply bg-brand-soft border-brand; }
+  }
+
+  .professional-card-featured {
+    @apply bg-brand-soft border-brand;
+    &:hover { @apply bg-brand-selected; }
   }
 }
 

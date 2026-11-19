@@ -63,7 +63,7 @@ export default function App() {
 
   if (!authChecked && view.screen === 'panel') {
     return (
-      <div className="min-h-screen bg-[#FFF9FB] flex items-center justify-center text-sm text-[#7A5464]">
+      <div className="min-h-screen bg-background flex items-center justify-center text-sm text-text-secondary">
         Carregando sistema MAIS CÍLIOS...
       </div>
     );

@@ -93,26 +93,26 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF9FB] flex flex-col">
-      <header className="border-b border-[#F3DCE6] bg-white">
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="border-b border-border bg-surface">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <button
             type="button"
             onClick={onBack}
-            className="min-h-[40px] px-2.5 -ml-2 inline-flex items-center gap-1.5 text-sm font-medium text-[#831843] hover:bg-[#FDF2F6] rounded-xl transition-colors"
+            className="min-h-[40px] px-2.5 -ml-2 inline-flex items-center gap-1.5 text-sm font-medium rounded-xl transition-colors btn-ghost"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Voltar</span>
           </button>
-          <span className="font-display text-2xl font-bold text-[#831843]">MAIS CÍLIOS</span>
+          <span className="font-display text-2xl font-bold text-brand-strong">MAIS CÍLIOS</span>
           <div className="w-16" aria-hidden="true" />
         </div>
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
-        <div className="w-full max-w-md bg-white border border-[#F1D8E2] rounded-3xl p-6 sm:p-8 shadow-[0_6px_24px_rgba(131,24,67,0.06)]">
-          <div className="flex items-center gap-3 pb-4 border-b border-[#F5E4EC]">
-            <div className="w-11 h-11 rounded-2xl bg-[#FDF2F6] border border-[#F1D8E2] flex items-center justify-center text-[#9D2A58]">
+        <div className="w-full max-w-md bg-surface border border-border rounded-3xl p-6 sm:p-8 shadow-card">
+          <div className="flex items-center gap-3 pb-4 border-b border-border">
+            <div className="w-11 h-11 rounded-2xl bg-brand-soft border border-border flex items-center justify-center text-brand-strong">
               {isConfigured ? (
                 <KeyRound className="w-5 h-5" />
               ) : (
@@ -120,10 +120,10 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
               )}
             </div>
             <div>
-              <h1 className="font-display text-2xl font-bold text-[#831843]">
+              <h1 className="font-display text-2xl font-bold text-brand-strong">
                 Acesso da Equipe
               </h1>
-              <p className="text-xs sm:text-sm text-[#7A5464]">
+              <p className="text-xs sm:text-sm text-text-secondary">
                 {statusLoading
                   ? 'Verificando acesso...'
                   : isConfigured
@@ -135,18 +135,18 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
 
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             <div>
-              <span className="block text-xs font-medium text-[#5E3A4A] mb-1.5">
+              <span className="block text-xs font-medium text-text-secondary mb-1.5">
                 Selecione a profissional
               </span>
-              <div className="grid grid-cols-2 gap-2 p-1 bg-[#F9ECF2] rounded-xl">
+              <div className="grid grid-cols-2 gap-2 p-1 bg-brand-soft rounded-xl">
                 <button
                   type="button"
                   onClick={() => handleSelectProfessional('lais')}
                   className={`min-h-[44px] rounded-lg text-sm font-semibold transition-colors ${
                     username === 'lais'
-                      ? 'bg-white text-[#831843] shadow-sm'
-                      : 'text-[#6E4959] hover:text-[#331824]'
-                  }`}
+                      ? 'tab-active'
+                      : 'tab-idle'
+                  }`} aria-pressed={username === 'lais'}
                 >
                   Laís (Admin)
                 </button>
@@ -155,9 +155,9 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
                   onClick={() => handleSelectProfessional('duda')}
                   className={`min-h-[44px] rounded-lg text-sm font-semibold transition-colors ${
                     username === 'duda'
-                      ? 'bg-white text-[#831843] shadow-sm'
-                      : 'text-[#6E4959] hover:text-[#331824]'
-                  }`}
+                      ? 'tab-active'
+                      : 'tab-idle'
+                  }`} aria-pressed={username === 'duda'}
                 >
                   Duda
                 </button>
@@ -165,18 +165,18 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
             </div>
 
             {statusLoading ? (
-              <div className="py-6 text-center text-sm text-[#7A5464]">
+              <div className="py-6 text-center text-sm text-text-secondary">
                 Carregando configuração de acesso...
               </div>
             ) : !isConfigured ? (
               <>
-                <div className="p-3.5 rounded-xl bg-[#FDF2F6] border border-[#EBC5D5] text-xs sm:text-sm text-[#5E3A4A] leading-relaxed">
+                <div className="p-3.5 rounded-xl bg-brand-soft border border-border text-xs sm:text-sm text-text-secondary leading-relaxed">
                   <strong>Primeiro acesso de {professionalLabel}:</strong> crie agora uma senha individual (mínimo 6 caracteres). Depois de salva, somente essa senha dará acesso ao painel.
                 </div>
 
                 {setupStatus?.setupKeyRequired && (
                   <div>
-                    <label htmlFor="setup-key" className="block text-sm font-medium text-[#5E3A4A] mb-1.5">
+                    <label htmlFor="setup-key" className="block text-sm font-medium text-text-secondary mb-1.5">
                       Código de configuração
                     </label>
                     <input
@@ -187,13 +187,13 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
                       value={setupKey}
                       onChange={(e) => setSetupKey(e.target.value)}
                       placeholder="Código fornecido pela administradora"
-                      className="w-full min-h-[46px] px-3.5 py-2 text-sm sm:text-base bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+                      className="w-full min-h-[46px] px-3.5 py-2 border rounded-xl field-control text-base"
                     />
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-xs font-medium text-[#5E3A4A] mb-1.5">
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="loginscreen-field-1">
                     Criar senha de {professionalLabel}
                   </label>
                   <div className="relative">
@@ -204,13 +204,13 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Mínimo 6 caracteres"
-                      className="w-full min-h-[46px] pl-3.5 pr-11 py-2 text-sm sm:text-base bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+                      className="w-full min-h-[46px] pl-3.5 pr-11 py-2 border rounded-xl field-control text-base" id="loginscreen-field-1"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((prev) => !prev)}
                       aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 min-h-[38px] min-w-[38px] flex items-center justify-center text-[#7A5464] hover:text-[#831843] rounded-lg"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 min-h-[38px] min-w-[38px] flex items-center justify-center text-text-secondary hover:text-brand-strong rounded-lg"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -218,7 +218,7 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-[#5E3A4A] mb-1.5">
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="loginscreen-field-2">
                     Confirmar senha de {professionalLabel}
                   </label>
                   <input
@@ -228,13 +228,13 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Repita a senha escolhida"
-                    className="w-full min-h-[46px] px-3.5 py-2 text-sm sm:text-base bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+                    className="w-full min-h-[46px] px-3.5 py-2 border rounded-xl field-control text-base" id="loginscreen-field-2"
                   />
                 </div>
               </>
             ) : (
               <div>
-                <label className="block text-xs font-medium text-[#5E3A4A] mb-1.5">
+                <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="loginscreen-field-3">
                   Senha de acesso
                 </label>
                 <div className="relative">
@@ -244,13 +244,13 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={`Digite a senha de ${professionalLabel}`}
-                    className="w-full min-h-[46px] pl-3.5 pr-11 py-2 text-sm sm:text-base bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+                    className="w-full min-h-[46px] pl-3.5 pr-11 py-2 border rounded-xl field-control text-base" id="loginscreen-field-3"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((prev) => !prev)}
                     aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 min-h-[38px] min-w-[38px] flex items-center justify-center text-[#7A5464] hover:text-[#831843] rounded-lg"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 min-h-[38px] min-w-[38px] flex items-center justify-center text-text-secondary hover:text-brand-strong rounded-lg"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -259,7 +259,7 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
             )}
 
             {error && (
-              <div className="p-3 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-sm text-[#9F1239]">
+              <div className="p-3 rounded-xl bg-error-soft border border-error-border text-sm text-error">
                 {error}
               </div>
             )}
@@ -267,7 +267,7 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
             <button
               type="submit"
               disabled={loading || statusLoading}
-              className="w-full min-h-[48px] px-5 py-2.5 rounded-xl bg-[#9D2A58] hover:bg-[#831843] disabled:opacity-60 text-white text-sm sm:text-base font-semibold transition-colors"
+              className="w-full min-h-[48px] px-5 py-2.5 rounded-xl disabled:opacity-60 text-sm sm:text-base font-semibold transition-colors btn-primary"
             >
               {loading
                 ? 'Salvando...'

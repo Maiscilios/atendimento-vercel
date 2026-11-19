@@ -304,32 +304,32 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF9FB] pb-12">
-      <header className="sticky top-0 z-20 border-b border-[#F3DCE6] bg-white/95 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+    <div className="min-h-screen bg-background pb-12">
+      <header className="sticky top-0 z-20 border-b border-border bg-surface/95 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-1.5 sm:gap-4">
           <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
               onClick={() => setSidebarOpen((open) => !open)}
               aria-label={sidebarOpen ? 'Fechar menu' : 'Abrir menu'}
               aria-expanded={sidebarOpen}
-              className="lg:hidden min-h-[42px] min-w-[42px] rounded-xl bg-[#FDF2F6] hover:bg-[#F9E3EC] border border-[#EBC5D5] text-[#831843] flex items-center justify-center shrink-0 transition-colors"
+              className="lg:hidden min-h-[42px] min-w-[42px] rounded-xl flex items-center justify-center shrink-0 transition-colors btn-secondary"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <span className="font-display text-2xl font-bold text-[#831843] whitespace-nowrap">
+            <span className="font-display text-xl sm:text-2xl font-bold text-brand-strong whitespace-nowrap">
               MAIS CÍLIOS
             </span>
-            <span className="hidden sm:inline text-sm text-[#7A5464] whitespace-nowrap">
+            <span className="hidden sm:inline text-sm text-text-secondary whitespace-nowrap">
               · Administração ({user.displayName})
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={onGoHome}
-              className="min-h-[40px] px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] border border-[#EBC5D5] rounded-xl transition-colors whitespace-nowrap"
+              className="min-h-[40px] px-2 sm:px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap btn-secondary" aria-label="Tela inicial"
             >
               <Home className="w-4 h-4" />
               <span className="hidden sm:inline">Tela inicial</span>
@@ -338,7 +338,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               type="button"
               onClick={() => setPasswordModalOpen(true)}
               aria-label="Alterar senha"
-              className="min-h-[40px] px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#5E3A4A] hover:bg-[#FDF2F6] rounded-xl transition-colors whitespace-nowrap"
+              className="min-h-[40px] px-2 sm:px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap btn-ghost"
             >
               <KeyRound className="w-4 h-4" />
               <span className="hidden md:inline">Minha senha</span>
@@ -346,10 +346,11 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             <button
               type="button"
               onClick={onLogout}
-              className="min-h-[40px] px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-[#9F1239] hover:bg-[#FFF1F2] rounded-xl transition-colors whitespace-nowrap"
+              aria-label="Sair"
+              className="min-h-[40px] px-2 sm:px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap btn-danger"
             >
               <LogOut className="w-4 h-4" />
-              <span>Sair</span>
+              <span className="hidden sm:inline">Sair</span>
             </button>
           </div>
         </div>
@@ -368,29 +369,29 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         <main className="flex-1 min-w-0 w-full space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
-              <h1 className="font-display text-3xl font-bold text-[#831843]">
+              <h1 className="font-display text-3xl font-bold text-brand-strong">
                 Painel Administrativo da Laís
               </h1>
-              <p className="text-sm text-[#7A5464]">
+              <p className="text-sm text-text-secondary">
                 Gestão completa de atendimentos, clientes, agendamentos e controle financeiro
               </p>
             </div>
 
             <div className="flex items-center gap-2">
               {confirmResetDuda ? (
-                <div className="flex items-center gap-2 bg-white border border-[#EBC5D5] rounded-xl px-3 py-1.5 text-xs">
-                  <span className="text-[#4D2939]">Liberar novo cadastro de senha para Duda?</span>
+                <div className="flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-1.5 text-xs">
+                  <span className="text-text-primary">Liberar novo cadastro de senha para Duda?</span>
                   <button
                     type="button"
                     onClick={() => void handleResetDudaPassword()}
-                    className="px-2.5 py-1 rounded-lg bg-[#9D2A58] text-white font-semibold"
+                    className="px-2.5 py-1 rounded-lg font-semibold btn-primary"
                   >
                     Confirmar
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmResetDuda(false)}
-                    className="px-2.5 py-1 rounded-lg bg-[#FDF2F6] text-[#6E4959]"
+                    className="px-2.5 py-1 rounded-lg btn-secondary"
                   >
                     Cancelar
                   </button>
@@ -402,7 +403,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                     setResetFeedback('');
                     setConfirmResetDuda(true);
                   }}
-                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white hover:bg-[#FDF2F6] border border-[#EED2DE] text-xs font-medium text-[#6E4959] inline-flex items-center gap-1.5 transition-colors"
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-surface border border-border text-xs font-medium inline-flex items-center gap-1.5 transition-colors btn-ghost"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Redefinir senha da Duda</span>
@@ -412,13 +413,13 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
           </div>
 
           {resetFeedback && (
-            <div className="p-3.5 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] text-sm text-[#166534]">
+            <div className="p-3.5 rounded-xl bg-success-soft border border-success-border text-sm text-success">
               {resetFeedback}
             </div>
           )}
 
           {error && (
-            <div className="p-3.5 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-sm text-[#9F1239]">
+            <div className="p-3.5 rounded-xl bg-error-soft border border-error-border text-sm text-error">
               {error}
             </div>
           )}
@@ -426,44 +427,45 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         {/* 1. INÍCIO */}
         {activeTab === 'home' && (
           <div className="space-y-5">
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="bg-surface border border-border rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2.5">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[#7A5464]">
+                <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
                   Data selecionada:
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0 max-w-full">
                   <button
                     type="button"
                     onClick={() => setHomeDate((d) => addDaysToISO(d, -1))}
                     aria-label="Dia anterior"
-                    className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl border border-[#EED2DE] bg-[#FFF9FB] hover:bg-[#FDF2F6] text-[#831843]"
+                    className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl border border-border bg-background btn-ghost"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
                   <input
                     type="date"
+                    aria-label="Data do resumo"
                     value={homeDate}
                     onChange={(e) => e.target.value && setHomeDate(e.target.value)}
-                    className="min-h-[40px] px-3 py-1.5 text-sm font-semibold bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] tabular-nums focus:outline-none focus:border-[#9D2A58]"
+                    className="w-40 min-w-0 min-h-[44px] px-3 py-1.5 font-semibold border rounded-xl tabular-nums field-control text-base"
                   />
                   <button
                     type="button"
                     onClick={() => setHomeDate((d) => addDaysToISO(d, 1))}
                     aria-label="Próximo dia"
-                    className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl border border-[#EED2DE] bg-[#FFF9FB] hover:bg-[#FDF2F6] text-[#831843]"
+                    className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl border border-border bg-background btn-ghost"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => setHomeDate(getLocalDateISO())}
-                    className="min-h-[40px] px-3 py-1.5 text-xs font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl"
+                    className="min-h-[40px] px-3 py-1.5 text-xs font-semibold rounded-xl btn-secondary"
                   >
                     Hoje
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1 p-1 bg-[#F9ECF2] rounded-xl ml-1">
+                <div className="flex items-center gap-1 p-1 bg-brand-soft rounded-xl ml-1">
                   {(
                     [
                       { id: 'all', label: 'Todas' },
@@ -477,8 +479,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                       onClick={() => setHomeProfFilter(opt.id)}
                       className={`min-h-[34px] px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                         homeProfFilter === opt.id
-                          ? 'bg-white text-[#831843] shadow-sm'
-                          : 'text-[#6E4959] hover:text-[#331824]'
+                          ? 'tab-active'
+                          : 'tab-idle'
                       }`}
                     >
                       {opt.label}
@@ -490,7 +492,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               <button
                 type="button"
                 onClick={() => void loadHome()}
-                className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl transition-colors"
+                className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold rounded-xl transition-colors btn-secondary"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${homeLoading ? 'animate-spin' : ''}`} />
                 <span>Atualizar</span>
@@ -498,89 +500,89 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white border border-[#F1D8E2] rounded-2xl p-5">
-                <span className="text-xs font-medium text-[#7A5464]">
+              <div className="bg-surface rounded-2xl p-5 metric-card-featured">
+                <span className="text-xs font-medium text-text-secondary">
                   Total produzido no dia ({dayAttendances.length})
                 </span>
-                <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#331824] tabular-nums">
+                <p className="mt-1.5 text-2xl sm:text-3xl font-bold metric-value tabular-nums">
                   {formatBRL(dayTotalProduced)}
                 </p>
               </div>
 
-              <div className="bg-white border border-[#F1D8E2] rounded-2xl p-5">
-                <span className="text-xs font-medium text-[#7A5464]">
+              <div className="bg-surface border border-border rounded-2xl p-5">
+                <span className="text-xs font-medium text-text-secondary">
                   Produção Laís no dia
                 </span>
-                <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#331824] tabular-nums">
+                <p className="mt-1.5 text-2xl sm:text-3xl font-bold metric-value tabular-nums">
                   {formatBRL(dayLaisProduced)}
                 </p>
               </div>
 
-              <div className="bg-white border border-[#F1D8E2] rounded-2xl p-5">
-                <span className="text-xs font-medium text-[#7A5464]">
+              <div className="bg-surface border border-border rounded-2xl p-5">
+                <span className="text-xs font-medium text-text-secondary">
                   Recebido Duda no dia
                 </span>
-                <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#331824] tabular-nums">
+                <p className="mt-1.5 text-2xl sm:text-3xl font-bold metric-value tabular-nums">
                   {formatBRL(dayDudaProduced)}
                 </p>
               </div>
 
-              <div className="bg-[#FDF2F6] border border-[#EBC5D5] rounded-2xl p-5">
-                <span className="text-xs font-medium text-[#831843]">
+              <div className="bg-brand-soft rounded-2xl p-5 metric-card-accent">
+                <span className="text-xs font-medium text-brand-strong">
                   Comissão 25% da Duda no dia
                 </span>
-                <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#831843] tabular-nums">
+                <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-brand-strong tabular-nums">
                   {formatBRL(dayDudaCommission)}
                 </p>
               </div>
             </div>
 
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-[#F5E4EC] flex items-center justify-between">
-                <h2 className="text-base font-semibold text-[#331824]">
+            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+                <h2 className="text-base font-semibold text-text-primary">
                   Atendimentos de {formatDateBR(homeDate)}
                 </h2>
-                <span className="text-xs text-[#7A5464] tabular-nums">
+                <span className="text-xs text-text-secondary tabular-nums">
                   {dayAttendances.length} registros
                 </span>
               </div>
 
               {homeLoading ? (
-                <div className="p-8 text-center text-sm text-[#7A5464]">
+                <div className="p-8 text-center text-sm text-text-secondary">
                   Carregando atendimentos do dia...
                 </div>
               ) : dayAttendances.length === 0 ? (
                 <div className="p-8 text-center space-y-1.5">
-                  <p className="text-base font-medium text-[#331824]">
+                  <p className="text-base font-medium text-text-primary">
                     Nenhum atendimento registrado em {formatDateBR(homeDate)}
                   </p>
-                  <p className="text-sm text-[#7A5464]">
+                  <p className="text-sm text-text-secondary">
                     Escolha outra data no calendário acima.
                   </p>
                 </div>
               ) : (
-                <div className="divide-y divide-[#F5E4EC]">
+                <div className="divide-y divide-border">
                   {dayAttendances.map((item) => (
                     <div
                       key={item.id}
-                      className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#FFF9FB]"
+                      className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-background"
                     >
                       <div className="space-y-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-bold uppercase tracking-wider text-[#9D2A58]">
+                          <span className="text-xs font-bold uppercase tracking-wider text-brand-strong">
                             {item.professional === 'lais' ? 'Laís' : 'Duda'}
                           </span>
-                          <span aria-hidden="true" className="text-[#D9B6C5]">
+                          <span aria-hidden="true" className="text-border">
                             ·
                           </span>
-                          <h3 className="text-base font-semibold text-[#331824]">
+                          <h3 className="text-base font-semibold text-text-primary">
                             {item.clientName}
                           </h3>
                         </div>
-                        <p className="text-sm text-[#5E3A4A]">
+                        <p className="text-sm text-text-secondary">
                           {item.services.map((s) => s.name).join(' · ')}
                           {item.additionals.length > 0 && (
-                            <span className="text-xs text-[#831843]">
+                            <span className="text-xs text-brand-strong">
                               {' '}
                               · Adicionais: {item.additionals.join(', ')}
                             </span>
@@ -590,15 +592,15 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
 
                       <div className="flex items-center gap-6 sm:text-right shrink-0">
                         <div>
-                          <span className="block text-xs text-[#7A5464]">Valor recebido</span>
-                          <span className="text-base font-bold text-[#331824] tabular-nums">
+                          <span className="block text-xs text-text-secondary">Valor recebido</span>
+                          <span className="text-base font-bold metric-value tabular-nums">
                             {formatBRL(item.totalPaid)}
                           </span>
                         </div>
                         {item.professional === 'duda' && (
                           <div>
-                            <span className="block text-xs text-[#831843]">Comissão (25%)</span>
-                            <span className="text-base font-bold text-[#831843] tabular-nums">
+                            <span className="block text-xs text-brand-strong">Comissão (25%)</span>
+                            <span className="text-base font-bold text-brand-strong tabular-nums">
                               {formatBRL(item.commissionAmount)}
                             </span>
                           </div>
@@ -615,20 +617,20 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         {/* 2. MINHAS CLIENTES */}
         {activeTab === 'clients' && (
           <div className="space-y-5">
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="bg-surface border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
                 <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 text-[#9D2A58] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Search className="w-4 h-4 text-brand absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={clientSearch}
                     onChange={(e) => setClientSearch(e.target.value)}
                     placeholder="Pesquisar cliente por nome ou WhatsApp..."
-                    className="w-full min-h-[44px] pl-10 pr-4 py-2 text-sm bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+                    className="w-full min-h-[44px] pl-10 pr-4 py-2 border rounded-xl field-control text-base"
                   />
                 </div>
 
-                <div className="flex items-center gap-1 p-1 bg-[#F9ECF2] rounded-xl self-start sm:self-auto">
+                <div className="flex items-center gap-1 p-1 bg-brand-soft rounded-xl self-start sm:self-auto">
                   {(
                     [
                       { id: 'all', label: 'Todas' },
@@ -642,8 +644,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                       onClick={() => setClientProfFilter(opt.id)}
                       className={`min-h-[36px] px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                         clientProfFilter === opt.id
-                          ? 'bg-white text-[#831843] shadow-sm'
-                          : 'text-[#6E4959] hover:text-[#331824]'
+                          ? 'tab-active'
+                          : 'tab-idle'
                       }`}
                     >
                       {opt.label}
@@ -652,41 +654,41 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                 </div>
               </div>
 
-              <span className="text-xs font-medium text-[#7A5464] tabular-nums">
+              <span className="text-xs font-medium text-text-secondary tabular-nums">
                 {clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}
               </span>
             </div>
 
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
+            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
               {clientsLoading ? (
-                <div className="p-8 text-center text-sm text-[#7A5464]">
+                <div className="p-8 text-center text-sm text-text-secondary">
                   Carregando clientes...
                 </div>
               ) : clients.length === 0 ? (
                 <div className="p-8 text-center space-y-1.5">
-                  <p className="text-base font-medium text-[#331824]">
+                  <p className="text-base font-medium text-text-primary">
                     Nenhuma cliente encontrada
                   </p>
-                  <p className="text-sm text-[#7A5464]">
+                  <p className="text-sm text-text-secondary">
                     O cadastro das clientes será montado automaticamente conforme os atendimentos forem confirmados.
                   </p>
                 </div>
               ) : (
-                <div className="divide-y divide-[#F5E4EC]">
+                <div className="divide-y divide-border">
                   {clients.map((client) => (
                     <div
                       key={client.key}
-                      className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#FFF9FB] transition-colors"
+                      className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-background transition-colors"
                     >
                       <div className="space-y-1 min-w-0">
                         <button
                           type="button"
                           onClick={() => setSelectedClient(client)}
-                          className="text-left text-base font-semibold text-[#831843] hover:underline"
+                          className="text-left text-base font-semibold text-brand-strong hover:underline"
                         >
                           {client.clientName}
                         </button>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-[#7A5464] tabular-nums">
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary tabular-nums">
                           <span>
                             {client.totalVisits}{' '}
                             {client.totalVisits === 1 ? 'atendimento' : 'atendimentos'}
@@ -694,7 +696,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                           <span aria-hidden="true">·</span>
                           <span>Último: {formatDateBR(client.lastVisitDate)}</span>
                           <span aria-hidden="true">·</span>
-                          <span className="font-semibold text-[#831843]">
+                          <span className="font-semibold text-brand-strong">
                             {formatDaysSinceLastVisitBR(client.lastVisitDate, brazilToday)}
                           </span>
                           <span aria-hidden="true">·</span>
@@ -712,7 +714,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                         href={buildWhatsAppLink(client.whatsapp)}
                         target="_blank"
                         rel="noreferrer"
-                        className="min-h-[42px] px-4 py-2 rounded-xl bg-[#ECFDF3] hover:bg-[#DCFCE7] border border-[#BBF7D0] text-[#15803D] text-sm font-semibold inline-flex items-center gap-2 self-start sm:self-auto transition-colors tabular-nums"
+                        className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 self-start sm:self-auto transition-colors tabular-nums btn-success-soft"
                       >
                         <MessageCircle className="w-4 h-4" />
                         <span>{client.whatsapp}</span>
@@ -728,9 +730,9 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         {/* 3. AGENDAMENTOS */}
         {activeTab === 'appointments' && (
           <div className="space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-[#F1D8E2] rounded-2xl p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-surface border border-border rounded-2xl p-4">
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-1 p-1 bg-[#F9ECF2] rounded-xl">
+                <div className="flex items-center gap-1 p-1 bg-brand-soft rounded-xl">
                   {(
                     [
                       { id: 'all', label: 'Todas' },
@@ -744,8 +746,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                       onClick={() => setApptProfFilter(opt.id)}
                       className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                         apptProfFilter === opt.id
-                          ? 'bg-white text-[#831843] shadow-sm'
-                          : 'text-[#6E4959] hover:text-[#331824]'
+                          ? 'tab-active'
+                          : 'tab-idle'
                       }`}
                     >
                       {opt.label}
@@ -753,7 +755,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                   ))}
                 </div>
 
-                <div className="flex items-center gap-1 p-1 bg-[#F9ECF2] rounded-xl">
+                <div className="grid grid-cols-3 sm:flex w-full sm:w-auto max-w-full gap-1 p-1 bg-brand-soft rounded-xl">
                   {(
                     [
                       { id: 'all', label: 'Todos' },
@@ -765,10 +767,11 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                       key={opt.id}
                       type="button"
                       onClick={() => setApptStatusFilter(opt.id)}
-                      className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                      aria-pressed={apptStatusFilter === opt.id}
+                      className={`min-h-[44px] min-w-0 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-normal sm:whitespace-nowrap text-center ${
                         apptStatusFilter === opt.id
-                          ? 'bg-white text-[#831843] shadow-sm'
-                          : 'text-[#6E4959] hover:text-[#331824]'
+                          ? 'tab-active'
+                          : 'tab-idle'
                       }`}
                     >
                       {opt.label}
@@ -780,7 +783,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               <button
                 type="button"
                 onClick={() => void loadAppointments()}
-                className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl transition-colors"
+                className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold rounded-xl transition-colors btn-secondary"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${appointmentsLoading ? 'animate-spin' : ''}`} />
                 <span>Atualizar</span>
@@ -788,13 +791,13 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             </div>
 
             {agendaFeedback && (
-              <div className="p-3.5 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] text-sm text-[#166534] flex flex-wrap items-center justify-between gap-3">
+              <div className="p-3.5 rounded-xl bg-success-soft border border-success-border text-sm text-success flex flex-wrap items-center justify-between gap-3">
                 <span>{agendaFeedback}</span>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setActiveTab('agenda')}
-                    className="px-3 py-1.5 rounded-lg bg-[#15803D] text-white text-xs font-semibold"
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold btn-success"
                   >
                     Ver na Minha agenda
                   </button>
@@ -802,7 +805,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                     type="button"
                     onClick={() => setAgendaFeedback('')}
                     aria-label="Fechar aviso"
-                    className="text-[#166534] hover:opacity-75"
+                    className="text-success hover:opacity-75"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -810,22 +813,22 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               </div>
             )}
 
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
+            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
               {appointmentsLoading ? (
-                <div className="p-8 text-center text-sm text-[#7A5464]">
+                <div className="p-8 text-center text-sm text-text-secondary">
                   Carregando agendamentos...
                 </div>
               ) : appointments.length === 0 ? (
                 <div className="p-8 text-center space-y-1.5">
-                  <p className="text-base font-medium text-[#331824]">
+                  <p className="text-base font-medium text-text-primary">
                     Nenhum retorno pré-agendado encontrado
                   </p>
-                  <p className="text-sm text-[#7A5464]">
+                  <p className="text-sm text-text-secondary">
                     As preferências de manutenção das clientes aparecerão aqui.
                   </p>
                 </div>
               ) : (
-                <div className="divide-y divide-[#F5E4EC]">
+                <div className="divide-y divide-border">
                   {appointments.map((item) => {
                     const isConfirmed = item.returnStatus === 'confirmed';
                     const profName = item.professional === 'lais' ? 'Laís' : 'Duda';
@@ -836,22 +839,22 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                     return (
                       <div
                         key={item.id}
-                        className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-[#FFF9FB]"
+                        className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-background"
                       >
                         <div className="space-y-1.5 min-w-0">
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                            <span className="text-xs font-bold uppercase tracking-wider text-[#9D2A58]">
+                            <span className="text-xs font-bold uppercase tracking-wider text-brand-strong">
                               {profName}
                             </span>
-                            <span aria-hidden="true" className="text-[#D9B6C5]">
+                            <span aria-hidden="true" className="text-border">
                               ·
                             </span>
-                            <h3 className="text-base font-semibold text-[#331824]">
+                            <h3 className="text-base font-semibold text-text-primary">
                               {item.clientName}
                             </h3>
                             <span
                               className={`inline-flex items-center gap-1 text-xs font-semibold ${
-                                isConfirmed ? 'text-[#15803D]' : 'text-[#B45309]'
+                                isConfirmed ? 'text-success' : 'text-warning'
                               }`}
                             >
                               {isConfirmed ? (
@@ -863,18 +866,18 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                             </span>
                           </div>
 
-                          <p className="text-sm text-[#5E3A4A]">
+                          <p className="text-sm text-text-secondary">
                             Serviço: {item.services.map((s) => s.name).join(', ')}
                           </p>
 
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#4D2939]">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-primary">
                             <span>
                               Prazo: <strong>{getReturnOptionLabel(item.returnOption)}</strong>
                             </span>
                             {item.returnDate && (
                               <span className="tabular-nums">
                                 Data prevista:{' '}
-                                <strong className="text-[#831843]">
+                                <strong className="text-brand-strong">
                                   {formatDateBR(item.returnDate)}
                                 </strong>
                               </span>
@@ -893,7 +896,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                             href={buildWhatsAppLink(item.whatsapp, message)}
                             target="_blank"
                             rel="noreferrer"
-                            className="min-h-[42px] px-4 py-2 rounded-xl bg-[#ECFDF3] hover:bg-[#DCFCE7] border border-[#BBF7D0] text-[#15803D] text-sm font-semibold inline-flex items-center gap-1.5 transition-colors tabular-nums"
+                            className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors tabular-nums btn-success-soft"
                           >
                             <MessageCircle className="w-4 h-4" />
                             <span>{item.whatsapp}</span>
@@ -907,7 +910,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                                 setAgendaFocusDate(item.returnDate || undefined);
                                 setActiveTab('agenda');
                               }}
-                              className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold bg-[#FDF2F6] hover:bg-[#F9E3EC] text-[#831843] border border-[#EBC5D5] inline-flex items-center gap-1.5 transition-colors"
+                              className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors btn-secondary"
                             >
                               <Calendar className="w-4 h-4" />
                               <span>Ver na Minha agenda</span>
@@ -918,7 +921,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               onClick={() =>
                                 setAgendaBookingState({ kind: 'confirm-request', request: item })
                               }
-                              className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold bg-[#9D2A58] hover:bg-[#831843] text-white inline-flex items-center gap-1.5 transition-colors"
+                              className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors btn-primary"
                             >
                               <CalendarPlus className="w-4 h-4" />
                               <span>Adicionar à agenda</span>
@@ -946,16 +949,16 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         {/* 4. HISTÓRICO DE ATENDIMENTOS */}
         {activeTab === 'history' && (
           <div className="space-y-5">
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4 space-y-3">
+            <div className="bg-surface border border-border rounded-2xl p-4 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="relative">
-                  <Search className="w-4 h-4 text-[#9D2A58] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Search className="w-4 h-4 text-brand absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={histSearch}
                     onChange={(e) => setHistSearch(e.target.value)}
                     placeholder="Buscar cliente ou telefone..."
-                    className="w-full min-h-[42px] pl-10 pr-3 py-2 text-sm bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+                    className="w-full min-h-[44px] pl-10 pr-3 py-2 border rounded-xl field-control text-base"
                   />
                 </div>
 
@@ -963,7 +966,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                   value={histProfFilter}
                   onChange={(e) => setHistProfFilter(e.target.value as 'all' | Professional)}
                   aria-label="Filtrar por profissional"
-                  className="min-h-[42px] px-3 py-2 text-sm bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+                  className="min-h-[44px] px-3 py-2 border rounded-xl field-control text-base"
                 >
                   <option value="all">Todas as profissionais</option>
                   <option value="lais">Somente Laís</option>
@@ -974,7 +977,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                   value={histServiceFilter}
                   onChange={(e) => setHistServiceFilter(e.target.value)}
                   aria-label="Filtrar por serviço"
-                  className="min-h-[42px] px-3 py-2 text-sm bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
+                  className="min-h-[44px] px-3 py-2 border rounded-xl field-control text-base"
                 >
                   <option value="all">Todos os serviços</option>
                   <optgroup label="Serviços da Laís">
@@ -994,9 +997,9 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                 </select>
               </div>
 
-              <div className="pt-2 border-t border-[#F5E4EC] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="pt-2 border-t border-border flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <label className="flex flex-wrap items-center gap-2.5 text-sm font-medium text-[#4D2939]">
+                  <label className="flex flex-wrap items-center gap-2.5 text-sm font-medium text-text-primary">
                     <span>Consultar há quantos dias?</span>
                     <input
                       type="number"
@@ -1005,13 +1008,13 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                       value={histDaysAgoInput}
                       onChange={(e) => setHistDaysAgoInput(e.target.value.replace(/\D/g, ''))}
                       placeholder="Ex: 1, 5, 15, 30"
-                      className="w-36 min-h-[40px] px-3 py-1.5 text-sm font-semibold bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] tabular-nums placeholder:font-normal placeholder:text-[#B18E9C] focus:outline-none focus:border-[#9D2A58]"
+                      className="w-36 min-h-[44px] px-3 py-1.5 font-semibold border rounded-xl tabular-nums field-control text-base"
                     />
                   </label>
 
                   {histTargetDate !== null && parsedHistDaysAgo !== null ? (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs sm:text-sm font-semibold text-[#831843] tabular-nums">
+                      <span className="text-xs sm:text-sm font-semibold text-brand-strong tabular-nums">
                         Data: {formatDateBR(histTargetDate)}{' '}
                         {parsedHistDaysAgo === 0
                           ? '(Hoje)'
@@ -1022,13 +1025,13 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                       <button
                         type="button"
                         onClick={() => setHistDaysAgoInput('')}
-                        className="min-h-[36px] px-3 py-1 text-xs font-semibold text-[#6E4959] bg-[#F9ECF2] hover:bg-[#F3DCE6] rounded-lg transition-colors"
+                        className="min-h-[36px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors btn-secondary"
                       >
                         Todo período
                       </button>
                     </div>
                   ) : (
-                    <span className="text-xs text-[#7A5464]">
+                    <span className="text-xs text-text-secondary">
                       Exibindo todos os dias (horário de Brasília)
                     </span>
                   )}
@@ -1037,7 +1040,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                 <button
                   type="button"
                   onClick={() => void loadHistory()}
-                  className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl transition-colors self-start lg:self-auto"
+                  className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold rounded-xl transition-colors self-start lg:self-auto btn-secondary"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${historyLoading ? 'animate-spin' : ''}`} />
                   <span>Atualizar</span>
@@ -1045,52 +1048,52 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               </div>
             </div>
 
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
+            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
               {historyLoading ? (
-                <div className="p-8 text-center text-sm text-[#7A5464]">
+                <div className="p-8 text-center text-sm text-text-secondary">
                   Carregando histórico...
                 </div>
               ) : historyList.length === 0 ? (
                 <div className="p-8 text-center space-y-1.5">
-                  <p className="text-base font-medium text-[#331824]">
+                  <p className="text-base font-medium text-text-primary">
                     Nenhum atendimento encontrado
                   </p>
-                  <p className="text-sm text-[#7A5464]">
+                  <p className="text-sm text-text-secondary">
                     Ajuste os filtros acima para visualizar outros períodos.
                   </p>
                 </div>
               ) : (
-                <div className="divide-y divide-[#F5E4EC]">
+                <div className="divide-y divide-border">
                   {historyList.map((item) => {
                     const isDuda = item.professional === 'duda';
                     return (
                       <div
                         key={item.id}
-                        className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-[#FFF9FB]"
+                        className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-background"
                       >
                         <div className="space-y-1.5 min-w-0">
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                            <span className="text-xs font-bold uppercase tracking-wider text-[#9D2A58]">
+                            <span className="text-xs font-bold uppercase tracking-wider text-brand-strong">
                               {isDuda ? 'Duda' : 'Laís'}
                             </span>
-                            <span aria-hidden="true" className="text-[#D9B6C5]">
+                            <span aria-hidden="true" className="text-border">
                               ·
                             </span>
-                            <h3 className="text-base font-semibold text-[#331824]">
+                            <h3 className="text-base font-semibold text-text-primary">
                               {item.clientName}
                             </h3>
-                            <span aria-hidden="true" className="text-[#D9B6C5]">
+                            <span aria-hidden="true" className="text-border">
                               ·
                             </span>
-                            <span className="text-xs text-[#7A5464] tabular-nums">
+                            <span className="text-xs text-text-secondary tabular-nums">
                               {formatDateBR(item.serviceDate)}
                             </span>
                           </div>
 
-                          <p className="text-sm text-[#4D2939]">
+                          <p className="text-sm text-text-primary">
                             {item.services.map((s) => s.name).join(' · ')}
                             {item.additionals.length > 0 && (
-                              <span className="text-xs text-[#831843]">
+                              <span className="text-xs text-brand-strong">
                                 {' '}
                                 · Adicionais: {item.additionals.join(', ')}
                               </span>
@@ -1101,21 +1104,21 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                             href={buildWhatsAppLink(item.whatsapp)}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 text-sm font-medium text-[#15803D] hover:underline tabular-nums"
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-success hover:underline tabular-nums"
                           >
                             <MessageCircle className="w-4 h-4" />
                             <span>{item.whatsapp}</span>
                           </a>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-4 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-[#F5E4EC]">
+                        <div className="flex flex-wrap items-center gap-4 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-border">
                           <div className="text-left lg:text-right">
-                            <span className="block text-xs text-[#7A5464]">Valor pago</span>
-                            <span className="text-base font-bold text-[#331824] tabular-nums">
+                            <span className="block text-xs text-text-secondary">Valor pago</span>
+                            <span className="text-base font-bold metric-value tabular-nums">
                               {formatBRL(item.totalPaid)}
                             </span>
                             {isDuda && (
-                              <span className="block text-xs font-medium text-[#831843] tabular-nums">
+                              <span className="block text-xs font-medium text-brand-strong tabular-nums">
                                 Comissão 25%: {formatBRL(item.commissionAmount)}
                               </span>
                             )}
@@ -1126,14 +1129,14 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               <button
                                 type="button"
                                 onClick={() => void handleDeleteAttendance(item.id)}
-                                className="min-h-[38px] px-3 py-1.5 rounded-lg bg-[#9F1239] text-white text-xs font-semibold"
+                                className="min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold btn-danger-solid"
                               >
                                 Excluir
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setConfirmDeleteId(null)}
-                                className="min-h-[38px] px-2.5 py-1.5 rounded-lg bg-[#F9ECF2] text-[#5E3A4A] text-xs font-medium"
+                                className="min-h-[38px] px-2.5 py-1.5 rounded-lg text-xs font-medium btn-secondary"
                               >
                                 Cancelar
                               </button>
@@ -1143,7 +1146,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               type="button"
                               onClick={() => setConfirmDeleteId(item.id)}
                               aria-label="Excluir registro"
-                              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-[#9D7888] hover:text-[#9F1239] hover:bg-[#FFF1F2] transition-colors"
+                              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-text-secondary hover:text-error hover:bg-error-soft transition-colors"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1161,16 +1164,16 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         {/* 5. CONTROLE FINANCEIRO */}
         {activeTab === 'finance' && (
           <div className="space-y-5">
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-1 p-1 bg-[#F9ECF2] rounded-xl">
+            <div className="bg-surface border border-border rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1 p-1 bg-brand-soft rounded-xl">
                 <button
                   type="button"
                   onClick={() => setFinanceView('daily')}
                   className={`min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                     financeView === 'daily'
-                      ? 'bg-white text-[#831843] shadow-sm'
-                      : 'text-[#6E4959] hover:text-[#331824]'
-                  }`}
+                      ? 'tab-active'
+                      : 'tab-idle'
+                  }`} aria-pressed={financeView === 'daily'}
                 >
                   Comissões da Duda por dia
                 </button>
@@ -1179,9 +1182,9 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                   onClick={() => setFinanceView('period')}
                   className={`min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                     financeView === 'period'
-                      ? 'bg-white text-[#831843] shadow-sm'
-                      : 'text-[#6E4959] hover:text-[#331824]'
-                  }`}
+                      ? 'tab-active'
+                      : 'tab-idle'
+                  }`} aria-pressed={financeView === 'period'}
                 >
                   Resumo por período
                 </button>
@@ -1190,7 +1193,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               <button
                 type="button"
                 onClick={() => void loadFinance()}
-                className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl transition-colors"
+                className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold rounded-xl transition-colors btn-secondary"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${financeLoading ? 'animate-spin' : ''}`} />
                 <span>Atualizar</span>
@@ -1199,21 +1202,22 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
 
             {financeView === 'daily' ? (
               <div className="space-y-5">
-                <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4 flex flex-wrap items-center gap-3">
-                  <Calendar className="w-4 h-4 text-[#9D2A58]" />
-                  <span className="text-sm font-medium text-[#4D2939]">
+                <div className="bg-surface border border-border rounded-2xl p-4 flex flex-wrap items-center gap-3">
+                  <Calendar className="w-4 h-4 text-brand" />
+                  <span className="text-sm font-medium text-text-primary">
                     Consultar dia específico:
                   </span>
                   <input
                     type="date"
+                    aria-label="Data das comissões"
                     value={commissionDate}
                     onChange={(e) => e.target.value && setCommissionDate(e.target.value)}
-                    className="min-h-[40px] px-3 py-1.5 text-sm font-semibold bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] tabular-nums focus:outline-none focus:border-[#9D2A58]"
+                    className="min-h-[44px] px-3 py-1.5 font-semibold border rounded-xl tabular-nums field-control text-base"
                   />
                   <button
                     type="button"
                     onClick={() => setCommissionDate(getLocalDateISO())}
-                    className="min-h-[40px] px-3 py-1.5 text-xs font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl"
+                    className="min-h-[40px] px-3 py-1.5 text-xs font-semibold rounded-xl btn-secondary"
                   >
                     Hoje
                   </button>
@@ -1221,30 +1225,30 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
 
                 {selectedCommissionDay && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-white border border-[#F1D8E2] rounded-2xl p-5">
-                      <span className="text-xs font-medium text-[#7A5464]">
+                    <div className="bg-surface border border-border rounded-2xl p-5">
+                      <span className="text-xs font-medium text-text-secondary">
                         Recebido pela Duda em {formatDateBR(selectedCommissionDay.date)}
                       </span>
-                      <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#331824] tabular-nums">
+                      <p className="mt-1.5 text-2xl sm:text-3xl font-bold metric-value tabular-nums">
                         {formatBRL(selectedCommissionDay.totalProduced)}
                       </p>
                     </div>
 
-                    <div className="bg-[#FDF2F6] border border-[#EBC5D5] rounded-2xl p-5">
-                      <span className="text-xs font-medium text-[#831843]">
+                    <div className="bg-brand-soft rounded-2xl p-5 metric-card-accent">
+                      <span className="text-xs font-medium text-brand-strong">
                         Comissão de 25% a receber
                       </span>
-                      <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#831843] tabular-nums">
+                      <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-brand-strong tabular-nums">
                         {formatBRL(selectedCommissionDay.commissionAmount)}
                       </p>
                     </div>
 
-                    <div className="bg-white border border-[#F1D8E2] rounded-2xl p-5 flex flex-col justify-between gap-2">
-                      <span className="text-xs font-medium text-[#7A5464]">
+                    <div className="bg-surface border border-border rounded-2xl p-5 flex flex-col justify-between gap-2">
+                      <span className="text-xs font-medium text-text-secondary">
                         Situação do repasse
                       </span>
                       {selectedCommissionDay.count === 0 ? (
-                        <span className="text-base font-semibold text-[#7A5464]">
+                        <span className="text-base font-semibold text-text-secondary">
                           Sem atendimentos neste dia
                         </span>
                       ) : (
@@ -1252,8 +1256,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                           <span
                             className={`inline-flex items-center gap-1.5 text-lg font-bold ${
                               selectedCommissionDay.payoutStatus === 'paid'
-                                ? 'text-[#15803D]'
-                                : 'text-[#B45309]'
+                                ? 'text-success'
+                                : 'text-warning'
                             }`}
                           >
                             {selectedCommissionDay.payoutStatus === 'paid' ? (
@@ -1279,8 +1283,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                             }
                             className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
                               selectedCommissionDay.payoutStatus === 'paid'
-                                ? 'bg-[#FFF9FB] hover:bg-[#FDF2F6] text-[#6E4959] border border-[#EBC5D5]'
-                                : 'bg-[#9D2A58] hover:bg-[#831843] text-white'
+                                ? 'bg-background hover:bg-brand-soft text-text-secondary border border-border'
+                                : 'bg-brand-strong hover:bg-brand-hover text-surface'
                             }`}
                           >
                             {selectedCommissionDay.payoutStatus === 'paid'
@@ -1293,18 +1297,18 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                   </div>
                 )}
 
-                <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-[#F5E4EC]">
-                    <h2 className="text-base font-semibold text-[#331824]">
+                <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-border">
+                    <h2 className="text-base font-semibold text-text-primary">
                       Repasses da Duda por dia
                     </h2>
                   </div>
                   {availableCommissionDays.length === 0 ? (
-                    <div className="p-8 text-center text-sm text-[#7A5464]">
+                    <div className="p-8 text-center text-sm text-text-secondary">
                       Nenhum atendimento da Duda registrado até o momento.
                     </div>
                   ) : (
-                    <div className="divide-y divide-[#F5E4EC]">
+                    <div className="divide-y divide-border">
                       {availableCommissionDays.map((day) => {
                         const selected = day.date === commissionDate;
                         const isPaid = day.payoutStatus === 'paid';
@@ -1312,7 +1316,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                           <div
                             key={day.date}
                             className={`p-4 sm:px-5 flex flex-wrap items-center justify-between gap-3 ${
-                              selected ? 'bg-[#FDF2F6]' : 'hover:bg-[#FFF9FB]'
+                              selected ? 'bg-brand-soft' : 'hover:bg-background'
                             }`}
                           >
                             <button
@@ -1320,24 +1324,24 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               onClick={() => setCommissionDate(day.date)}
                               className="text-left space-y-0.5"
                             >
-                              <span className="block text-base font-semibold text-[#331824] tabular-nums">
+                              <span className="block text-base font-semibold text-text-primary tabular-nums">
                                 {formatDateBR(day.date)}
                               </span>
-                              <span className="block text-xs text-[#7A5464] tabular-nums">
+                              <span className="block text-xs text-text-secondary tabular-nums">
                                 {day.count} {day.count === 1 ? 'atendimento' : 'atendimentos'}
                               </span>
                             </button>
 
                             <div className="flex flex-wrap items-center gap-4 sm:gap-6 tabular-nums">
                               <div className="text-right">
-                                <span className="block text-xs text-[#7A5464]">Recebido</span>
-                                <span className="text-sm font-bold text-[#331824]">
+                                <span className="block text-xs text-text-secondary">Recebido</span>
+                                <span className="text-sm font-bold metric-value">
                                   {formatBRL(day.totalProduced)}
                                 </span>
                               </div>
                               <div className="text-right">
-                                <span className="block text-xs text-[#831843]">Comissão 25%</span>
-                                <span className="text-sm font-bold text-[#831843]">
+                                <span className="block text-xs text-brand-strong">Comissão 25%</span>
+                                <span className="text-sm font-bold text-brand-strong">
                                   {formatBRL(day.commissionAmount)}
                                 </span>
                               </div>
@@ -1349,8 +1353,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                                 }
                                 className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
                                   isPaid
-                                    ? 'bg-[#ECFDF3] text-[#15803D] border border-[#BBF7D0]'
-                                    : 'bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A] hover:bg-[#FEF3C7]'
+                                    ? 'bg-success-soft text-success border border-success-border'
+                                    : 'bg-warning-soft text-warning border border-warning-border hover:bg-warning-selected'
                                 }`}
                               >
                                 {isPaid ? (
@@ -1370,53 +1374,53 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               </div>
             ) : (
               <div className="space-y-5">
-                <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4">
+                <div className="bg-surface border border-border rounded-2xl p-4">
                   <PeriodFilterBar value={financePeriod} onChange={setFinancePeriod} />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-white border border-[#F1D8E2] rounded-2xl p-5">
-                    <span className="text-xs font-medium text-[#7A5464]">
+                  <div className="bg-surface border border-border rounded-2xl p-5">
+                    <span className="text-xs font-medium text-text-secondary">
                       Total produzido por Laís ({periodSummary.laisCount})
                     </span>
-                    <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#331824] tabular-nums">
+                    <p className="mt-1.5 text-2xl sm:text-3xl font-bold metric-value tabular-nums">
                       {formatBRL(periodSummary.totalLaisProduced)}
                     </p>
                   </div>
 
-                  <div className="bg-white border border-[#F1D8E2] rounded-2xl p-5">
-                    <span className="text-xs font-medium text-[#7A5464]">
+                  <div className="bg-surface border border-border rounded-2xl p-5">
+                    <span className="text-xs font-medium text-text-secondary">
                       Recebido nos atendimentos da Duda ({periodSummary.count})
                     </span>
-                    <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#331824] tabular-nums">
+                    <p className="mt-1.5 text-2xl sm:text-3xl font-bold metric-value tabular-nums">
                       {formatBRL(periodSummary.totalReceived)}
                     </p>
                   </div>
 
-                  <div className="bg-[#FDF2F6] border border-[#EBC5D5] rounded-2xl p-5">
-                    <span className="text-xs font-medium text-[#831843]">
+                  <div className="bg-brand-soft rounded-2xl p-5 metric-card-accent">
+                    <span className="text-xs font-medium text-brand-strong">
                       Total de comissão 25% (Duda → Laís)
                     </span>
-                    <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-[#831843] tabular-nums">
+                    <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-brand-strong tabular-nums">
                       {formatBRL(periodSummary.totalCommissionToReceive)}
                     </p>
                   </div>
                 </div>
 
-                <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
+                <div className="bg-surface border border-border rounded-2xl overflow-hidden">
                   {financeLoading ? (
-                    <div className="p-8 text-center text-sm text-[#7A5464]">
+                    <div className="p-8 text-center text-sm text-text-secondary">
                       Carregando atendimentos da Duda...
                     </div>
                   ) : dudaPeriodAttendances.length === 0 ? (
-                    <div className="p-8 text-center text-sm text-[#7A5464]">
+                    <div className="p-8 text-center text-sm text-text-secondary">
                       Nenhum atendimento da Duda encontrado neste período.
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Resumo financeiro por período">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="border-b border-[#F1D8E2] bg-[#FFF9FB] text-xs font-semibold text-[#7A5464]">
+                          <tr className="border-b border-border bg-background text-xs font-semibold text-text-secondary">
                             <th className="py-3 px-4">Data</th>
                             <th className="py-3 px-4">Cliente</th>
                             <th className="py-3 px-4">Serviços</th>
@@ -1424,22 +1428,22 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                             <th className="py-3 px-4 text-right">Comissão Laís (25%)</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-[#F5E4EC] text-sm">
+                        <tbody className="divide-y divide-border text-sm">
                           {dudaPeriodAttendances.map((item) => (
-                            <tr key={item.id} className="hover:bg-[#FFF9FB]">
-                              <td className="py-3 px-4 text-[#5E3A4A] tabular-nums whitespace-nowrap">
+                            <tr key={item.id} className="hover:bg-background">
+                              <td className="py-3 px-4 text-text-secondary tabular-nums whitespace-nowrap">
                                 {formatDateBR(item.serviceDate)}
                               </td>
-                              <td className="py-3 px-4 font-medium text-[#331824]">
+                              <td className="py-3 px-4 font-medium text-text-primary">
                                 {item.clientName}
                               </td>
-                              <td className="py-3 px-4 text-[#5E3A4A]">
+                              <td className="py-3 px-4 text-text-secondary">
                                 {item.services.map((s) => s.name).join(', ')}
                               </td>
-                              <td className="py-3 px-4 text-right font-semibold text-[#331824] tabular-nums whitespace-nowrap">
+                              <td className="py-3 px-4 text-right font-semibold text-text-primary tabular-nums whitespace-nowrap">
                                 {formatBRL(item.totalPaid)}
                               </td>
-                              <td className="py-3 px-4 text-right font-bold text-[#831843] tabular-nums whitespace-nowrap">
+                              <td className="py-3 px-4 text-right font-bold text-brand-strong tabular-nums whitespace-nowrap">
                                 {formatBRL(item.commissionAmount)}
                               </td>
                             </tr>

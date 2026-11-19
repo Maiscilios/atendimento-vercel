@@ -285,21 +285,21 @@ export function AgendaCalendarTab({
 
   return (
     <div className="space-y-5">
-      <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4 space-y-4">
+      <div className="bg-surface border border-border rounded-2xl p-4 space-y-4">
         {isAdmin && (
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#F5E4EC]">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#7A5464]">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border">
+            <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
               Agenda exibida:
             </span>
-            <div className="flex items-center gap-1 p-1 bg-[#F9ECF2] rounded-xl">
+            <div className="flex items-center gap-1 p-1 bg-brand-soft rounded-xl">
               <button
                 type="button"
                 onClick={() => setActiveProfessional('lais')}
                 className={`min-h-[38px] px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-colors ${
                   activeProfessional === 'lais'
-                    ? 'bg-white text-[#831843] shadow-sm'
-                    : 'text-[#6E4959] hover:text-[#331824]'
-                }`}
+                    ? 'tab-active'
+                    : 'tab-idle'
+                }`} aria-pressed={activeProfessional === 'lais'}
               >
                 Agenda da Laís
               </button>
@@ -308,9 +308,9 @@ export function AgendaCalendarTab({
                 onClick={() => setActiveProfessional('duda')}
                 className={`min-h-[38px] px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-colors ${
                   activeProfessional === 'duda'
-                    ? 'bg-white text-[#831843] shadow-sm'
-                    : 'text-[#6E4959] hover:text-[#331824]'
-                }`}
+                    ? 'tab-active'
+                    : 'tab-idle'
+                }`} aria-pressed={activeProfessional === 'duda'}
               >
                 Agenda da Duda
               </button>
@@ -320,7 +320,7 @@ export function AgendaCalendarTab({
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 p-1 bg-[#F9ECF2] rounded-xl">
+            <div className="flex items-center gap-1 p-1 bg-brand-soft rounded-xl">
               {(
                 [
                   { id: 'day', label: 'Dia' },
@@ -334,9 +334,9 @@ export function AgendaCalendarTab({
                   onClick={() => setViewMode(mode.id)}
                   className={`min-h-[40px] px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
                     viewMode === mode.id
-                      ? 'bg-white text-[#831843] shadow-sm'
-                      : 'text-[#6E4959] hover:text-[#331824]'
-                  }`}
+                      ? 'tab-active'
+                      : 'tab-idle'
+                  }`} aria-pressed={viewMode === mode.id}
                 >
                   {mode.label}
                 </button>
@@ -348,14 +348,14 @@ export function AgendaCalendarTab({
                 type="button"
                 onClick={() => handleNavigate(-1)}
                 aria-label="Período anterior"
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border border-[#EED2DE] bg-[#FFF9FB] hover:bg-[#FDF2F6] text-[#831843]"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border border-border bg-background btn-ghost"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedDate(brazilToday)}
-                className="min-h-[44px] px-3.5 py-2 text-xs sm:text-sm font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl transition-colors"
+                className="min-h-[44px] px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-colors btn-secondary"
               >
                 Hoje
               </button>
@@ -363,7 +363,7 @@ export function AgendaCalendarTab({
                 type="button"
                 onClick={() => handleNavigate(1)}
                 aria-label="Próximo período"
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border border-[#EED2DE] bg-[#FFF9FB] hover:bg-[#FDF2F6] text-[#831843]"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border border-border bg-background btn-ghost"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -376,13 +376,13 @@ export function AgendaCalendarTab({
               value={selectedDate}
               onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
               aria-label="Selecionar data na agenda"
-              className="min-h-[44px] px-3 py-2 text-sm font-semibold bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] tabular-nums focus:outline-none focus:border-[#9D2A58]"
+              className="min-h-[44px] px-3 py-2 font-semibold border rounded-xl tabular-nums field-control text-base"
             />
             <button
               type="button"
               onClick={() => void loadAgenda()}
               aria-label="Atualizar agenda"
-              className="min-h-[44px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl transition-colors"
+              className="min-h-[44px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold rounded-xl transition-colors btn-secondary"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">Atualizar</span>
@@ -396,7 +396,7 @@ export function AgendaCalendarTab({
                   initialDate: selectedDate,
                 })
               }
-              className="min-h-[44px] px-4 py-2 inline-flex items-center gap-2 text-sm font-semibold text-white bg-[#9D2A58] hover:bg-[#831843] rounded-xl transition-colors shadow-sm"
+              className="min-h-[44px] px-4 py-2 inline-flex items-center gap-2 text-sm font-semibold rounded-xl transition-colors shadow-sm btn-primary"
             >
               <Plus className="w-4 h-4" />
               <span>Novo agendamento</span>
@@ -404,12 +404,12 @@ export function AgendaCalendarTab({
           </div>
         </div>
 
-        <div className="pt-2 border-t border-[#F5E4EC] flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-[#831843]">
+        <div className="pt-2 border-t border-border flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-brand-strong">
             <Calendar className="w-4 h-4 shrink-0" />
             <h2 className="text-base sm:text-lg font-semibold capitalize">{headerPeriodLabel}</h2>
           </div>
-          <span className="text-xs text-[#7A5464] tabular-nums">
+          <span className="text-xs text-text-secondary tabular-nums">
             Agenda da {viewingProfName} · {appointments.length}{' '}
             {appointments.length === 1 ? 'agendamento confirmado' : 'agendamentos confirmados'}
           </span>
@@ -417,13 +417,13 @@ export function AgendaCalendarTab({
       </div>
 
       {feedback && (
-        <div className="p-3.5 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] text-sm text-[#166534] flex items-center justify-between gap-3">
+        <div className="p-3.5 rounded-xl bg-success-soft border border-success-border text-sm text-success flex items-center justify-between gap-3">
           <span>{feedback}</span>
           <button
             type="button"
             onClick={() => setFeedback('')}
             aria-label="Fechar aviso"
-            className="text-[#166534] hover:opacity-75"
+            className="text-success hover:opacity-75"
           >
             <X className="w-4 h-4" />
           </button>
@@ -431,71 +431,71 @@ export function AgendaCalendarTab({
       )}
 
       {error && (
-        <div className="p-3.5 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-sm text-[#9F1239]">
+        <div className="p-3.5 rounded-xl bg-error-soft border border-error-border text-sm text-error">
           {error}
         </div>
       )}
 
       {/* VIEW: DAY */}
       {viewMode === 'day' && (
-        <section className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
-          <div className="px-4 sm:px-5 py-3.5 border-b border-[#F5E4EC] flex flex-wrap items-center justify-between gap-2">
+        <section className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="px-4 sm:px-5 py-3.5 border-b border-border flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-base font-semibold text-[#331824]">
+              <h3 className="text-base font-semibold text-text-primary">
                 Confirmados em {formatDateBR(selectedDate)}
                 {selectedDate === brazilToday && (
-                  <span className="ml-2 text-xs font-semibold text-[#9D2A58]">(Hoje)</span>
+                  <span className="ml-2 text-xs font-semibold text-brand-strong">(Hoje)</span>
                 )}
               </h3>
-              <p className="text-xs text-[#7A5464]">
+              <p className="text-xs text-text-secondary">
                 Apenas agendamentos confirmados aparecem no calendário da {viewingProfName}
               </p>
             </div>
-            <span className="text-xs font-medium text-[#7A5464] tabular-nums">
+            <span className="text-xs font-medium text-text-secondary tabular-nums">
               {selectedDayAppointments.length}{' '}
               {selectedDayAppointments.length === 1 ? 'horário marcado' : 'horários marcados'}
             </span>
           </div>
 
           {loading ? (
-            <div className="p-8 text-center text-sm text-[#7A5464]">Carregando agenda...</div>
+            <div className="p-8 text-center text-sm text-text-secondary">Carregando agenda...</div>
           ) : selectedDayAppointments.length === 0 ? (
             <div className="p-8 text-center space-y-2">
-              <p className="text-base font-medium text-[#331824]">
+              <p className="text-base font-medium text-text-primary">
                 Nenhum agendamento confirmado em {formatDateBR(selectedDate)}
               </p>
-              <p className="text-sm text-[#7A5464]">
+              <p className="text-sm text-text-secondary">
                 Adicione um horário manualmente ou confirme uma solicitação na aba “Agendamentos”.
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-[#F5E4EC]">
+            <div className="divide-y divide-border">
               {selectedDayAppointments.map((appt) => (
                 <div
                   key={appt.id}
-                  className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#FFF9FB] transition-colors"
+                  className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-background transition-colors"
                 >
                   <button
                     type="button"
                     onClick={() => setDetailAppointment(appt)}
                     className="flex-1 text-left flex items-start sm:items-center gap-3.5 min-w-0"
                   >
-                    <span className="min-w-[62px] text-lg font-bold text-[#831843] tabular-nums pt-0.5 sm:pt-0">
+                    <span className="min-w-[62px] text-lg font-bold text-brand-strong tabular-nums pt-0.5 sm:pt-0">
                       {appt.appointmentTime}
                     </span>
                     <div className="min-w-0 space-y-0.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-base font-semibold text-[#331824] truncate">
+                        <span className="text-base font-semibold text-text-primary truncate">
                           {appt.clientName}
                         </span>
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#15803D]">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-success">
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>Confirmado</span>
                         </span>
                       </div>
-                      <p className="text-sm text-[#5E3A4A]">{appt.procedureName}</p>
+                      <p className="text-sm text-text-secondary">{appt.procedureName}</p>
                       {appt.notes && (
-                        <p className="text-xs text-[#7A5464] truncate">Obs.: {appt.notes}</p>
+                        <p className="text-xs text-text-secondary truncate">Obs.: {appt.notes}</p>
                       )}
                     </div>
                   </button>
@@ -508,7 +508,7 @@ export function AgendaCalendarTab({
                       )}
                       target="_blank"
                       rel="noreferrer"
-                      className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-[#ECFDF3] hover:bg-[#DCFCE7] border border-[#BBF7D0] text-[#15803D] text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 tabular-nums"
+                      className="min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 tabular-nums btn-success-soft"
                     >
                       <MessageCircle className="w-4 h-4" />
                       <span>WhatsApp</span>
@@ -516,7 +516,7 @@ export function AgendaCalendarTab({
                     <button
                       type="button"
                       onClick={() => setDetailAppointment(appt)}
-                      className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-[#FDF2F6] hover:bg-[#F9E3EC] border border-[#EBC5D5] text-[#831843] text-xs sm:text-sm font-semibold"
+                      className="min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold btn-secondary"
                     >
                       Detalhes
                     </button>
@@ -539,17 +539,17 @@ export function AgendaCalendarTab({
             return (
               <div
                 key={dayISO}
-                className={`bg-white rounded-2xl border flex flex-col overflow-hidden ${
+                className={`bg-surface rounded-2xl border flex flex-col overflow-hidden ${
                   isToday
-                    ? 'border-[#9D2A58] ring-1 ring-[#9D2A58]/20'
+                    ? 'border-brand ring-1 ring-brand-strong/20'
                     : isSelected
-                      ? 'border-[#D99BB5]'
-                      : 'border-[#F1D8E2]'
+                      ? 'border-brand'
+                      : 'border-border'
                 }`}
               >
                 <div
                   className={`px-3.5 py-3 border-b flex items-center justify-between gap-2 ${
-                    isToday ? 'bg-[#FDF2F6] border-[#EBC5D5]' : 'bg-[#FFF9FB] border-[#F5E4EC]'
+                    isToday ? 'bg-brand-soft border-border' : 'bg-background border-border'
                   }`}
                 >
                   <button
@@ -560,11 +560,11 @@ export function AgendaCalendarTab({
                     }}
                     className="text-left"
                   >
-                    <span className="block text-xs font-semibold uppercase tracking-wider text-[#7A5464]">
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-text-secondary">
                       {WEEKDAY_SHORT[index]}
                       {isToday ? ' · Hoje' : ''}
                     </span>
-                    <span className="text-base font-bold text-[#331824] tabular-nums">
+                    <span className="text-base font-bold text-text-primary tabular-nums">
                       {formatDateBR(dayISO).slice(0, 5)}
                     </span>
                   </button>
@@ -579,7 +579,7 @@ export function AgendaCalendarTab({
                       })
                     }
                     aria-label={`Novo agendamento em ${formatDateBR(dayISO)}`}
-                    className="min-h-[36px] min-w-[36px] rounded-lg bg-white hover:bg-[#F9E3EC] border border-[#EED2DE] text-[#831843] flex items-center justify-center transition-colors"
+                    className="min-h-[36px] min-w-[36px] rounded-lg bg-surface hover:bg-brand-selected border border-border text-brand-strong flex items-center justify-center transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -587,7 +587,7 @@ export function AgendaCalendarTab({
 
                 <div className="p-2.5 space-y-2 flex-1">
                   {dayList.length === 0 ? (
-                    <p className="py-4 text-center text-xs text-[#9B7A88]">
+                    <p className="py-4 text-center text-xs text-text-secondary">
                       Sem agendamentos
                     </p>
                   ) : (
@@ -596,18 +596,18 @@ export function AgendaCalendarTab({
                         key={appt.id}
                         type="button"
                         onClick={() => setDetailAppointment(appt)}
-                        className="w-full text-left p-2.5 rounded-xl bg-[#FDF2F6] hover:bg-[#F9E3EC] border border-[#EBC5D5] transition-colors space-y-0.5"
+                        className="w-full text-left p-2.5 rounded-xl transition-colors space-y-0.5 btn-secondary"
                       >
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-bold text-[#831843] tabular-nums">
+                          <span className="text-xs font-bold text-brand-strong tabular-nums">
                             {appt.appointmentTime}
                           </span>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#15803D] shrink-0" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0" />
                         </div>
-                        <p className="text-sm font-semibold text-[#331824] truncate">
+                        <p className="text-sm font-semibold text-text-primary truncate">
                           {appt.clientName}
                         </p>
-                        <p className="text-xs text-[#5E3A4A] truncate">{appt.procedureName}</p>
+                        <p className="text-xs text-text-secondary truncate">{appt.procedureName}</p>
                       </button>
                     ))
                   )}
@@ -621,12 +621,12 @@ export function AgendaCalendarTab({
       {/* VIEW: MONTH */}
       {viewMode === 'month' && (
         <div className="space-y-5">
-          <section className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
-            <div className="grid grid-cols-7 border-b border-[#F1D8E2] bg-[#FFF9FB]">
+          <section className="bg-surface border border-border rounded-2xl overflow-hidden">
+            <div className="grid grid-cols-7 border-b border-border bg-background">
               {WEEKDAY_SHORT.map((dayName) => (
                 <div
                   key={dayName}
-                  className="py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-[#7A5464]"
+                  className="py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-text-secondary"
                 >
                   {dayName}
                 </div>
@@ -644,31 +644,31 @@ export function AgendaCalendarTab({
                     key={cell.iso}
                     type="button"
                     onClick={() => setSelectedDate(cell.iso)}
-                    className={`min-h-[76px] sm:min-h-[104px] p-1.5 sm:p-2 border-b border-r border-[#F5E4EC] text-left flex flex-col justify-between transition-colors ${
+                    className={`min-h-[76px] sm:min-h-[104px] p-1.5 sm:p-2 border-b border-r border-border text-left flex flex-col justify-between transition-colors ${
                       isSelected
-                        ? 'bg-[#FDF2F6]'
+                        ? 'bg-brand-selected'
                         : cell.inCurrentMonth
-                          ? 'bg-white hover:bg-[#FFF9FB]'
-                          : 'bg-[#FFFBFD] text-[#B89CA8]'
+                          ? 'bg-surface hover:bg-background'
+                          : 'bg-background text-text-secondary'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1 w-full">
                       <span
                         className={`w-7 h-7 rounded-full inline-flex items-center justify-center text-xs sm:text-sm font-semibold tabular-nums ${
                           isToday
-                            ? 'bg-[#9D2A58] text-white'
+                            ? 'bg-brand-strong text-surface'
                             : isSelected
-                              ? 'bg-[#831843] text-white'
+                              ? 'bg-brand-selected text-brand-strong ring-1 ring-brand'
                               : cell.inCurrentMonth
-                                ? 'text-[#331824]'
-                                : 'text-[#B89CA8]'
+                                ? 'text-text-primary'
+                                : 'text-text-secondary'
                         }`}
                       >
                         {cell.dayNumber}
                       </span>
 
                       {dayList.length > 0 && (
-                        <span className="text-[11px] font-bold text-[#831843] tabular-nums">
+                        <span className="text-[11px] font-bold text-brand-strong tabular-nums">
                           {dayList.length}
                         </span>
                       )}
@@ -678,19 +678,19 @@ export function AgendaCalendarTab({
                       {dayList.slice(0, 2).map((appt) => (
                         <div
                           key={appt.id}
-                          className="hidden sm:block px-1.5 py-0.5 rounded bg-white border border-[#EBC5D5] text-[11px] text-[#331824] truncate tabular-nums"
+                          className="hidden sm:block px-1.5 py-0.5 rounded bg-surface border border-border text-[11px] text-text-primary truncate tabular-nums"
                         >
-                          <strong className="text-[#831843]">{appt.appointmentTime}</strong>{' '}
+                          <strong className="text-brand-strong">{appt.appointmentTime}</strong>{' '}
                           {appt.clientName}
                         </div>
                       ))}
                       {dayList.length > 2 && (
-                        <div className="hidden sm:block text-[10px] font-semibold text-[#831843] pl-1">
+                        <div className="hidden sm:block text-[10px] font-semibold text-brand-strong pl-1">
                           +{dayList.length - 2} mais
                         </div>
                       )}
                       {dayList.length > 0 && (
-                        <div className="sm:hidden text-[10px] font-semibold text-[#831843] tabular-nums">
+                        <div className="sm:hidden text-[10px] font-semibold text-brand-strong tabular-nums">
                           {dayList[0].appointmentTime}
                           {dayList.length > 1 ? ` +${dayList.length - 1}` : ''}
                         </div>
@@ -702,13 +702,13 @@ export function AgendaCalendarTab({
             </div>
           </section>
 
-          <section className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
-            <div className="px-4 sm:px-5 py-3.5 border-b border-[#F5E4EC] flex flex-wrap items-center justify-between gap-3">
+          <section className="bg-surface border border-border rounded-2xl overflow-hidden">
+            <div className="px-4 sm:px-5 py-3.5 border-b border-border flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-[#331824]">
+                <h3 className="text-base font-semibold text-text-primary">
                   Dia selecionado: {formatLongDateBR(selectedDate)}
                 </h3>
-                <p className="text-xs text-[#7A5464] tabular-nums">
+                <p className="text-xs text-text-secondary tabular-nums">
                   {selectedDayAppointments.length}{' '}
                   {selectedDayAppointments.length === 1
                     ? 'agendamento confirmado'
@@ -724,7 +724,7 @@ export function AgendaCalendarTab({
                     initialDate: selectedDate,
                   })
                 }
-                className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-[#9D2A58] hover:bg-[#831843] text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 btn-primary"
               >
                 <Plus className="w-4 h-4" />
                 <span>Agendar neste dia</span>
@@ -732,29 +732,29 @@ export function AgendaCalendarTab({
             </div>
 
             {selectedDayAppointments.length === 0 ? (
-              <div className="p-6 text-center text-sm text-[#7A5464]">
+              <div className="p-6 text-center text-sm text-text-secondary">
                 Nenhum agendamento confirmado para {formatDateBR(selectedDate)}.
               </div>
             ) : (
-              <div className="divide-y divide-[#F5E4EC]">
+              <div className="divide-y divide-border">
                 {selectedDayAppointments.map((appt) => (
                   <div
                     key={appt.id}
-                    className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#FFF9FB]"
+                    className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-background"
                   >
                     <button
                       type="button"
                       onClick={() => setDetailAppointment(appt)}
                       className="text-left flex items-center gap-3.5 min-w-0 flex-1"
                     >
-                      <span className="text-base font-bold text-[#831843] tabular-nums">
+                      <span className="text-base font-bold text-brand-strong tabular-nums">
                         {appt.appointmentTime}
                       </span>
                       <div className="min-w-0">
-                        <p className="text-base font-semibold text-[#331824] truncate">
+                        <p className="text-base font-semibold text-text-primary truncate">
                           {appt.clientName}
                         </p>
-                        <p className="text-sm text-[#5E3A4A] truncate">{appt.procedureName}</p>
+                        <p className="text-sm text-text-secondary truncate">{appt.procedureName}</p>
                       </div>
                     </button>
 
@@ -763,7 +763,7 @@ export function AgendaCalendarTab({
                         href={buildWhatsAppLink(appt.whatsapp)}
                         target="_blank"
                         rel="noreferrer"
-                        className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-[#ECFDF3] hover:bg-[#DCFCE7] border border-[#BBF7D0] text-[#15803D] text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5"
+                        className="min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 btn-success-soft"
                       >
                         <MessageCircle className="w-4 h-4" />
                         <span>WhatsApp</span>
@@ -771,7 +771,7 @@ export function AgendaCalendarTab({
                       <button
                         type="button"
                         onClick={() => setDetailAppointment(appt)}
-                        className="min-h-[40px] px-3 py-1.5 rounded-xl bg-[#FDF2F6] hover:bg-[#F9E3EC] text-[#831843] text-xs sm:text-sm font-semibold"
+                        className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold btn-secondary"
                       >
                         Gerenciar
                       </button>
@@ -787,18 +787,19 @@ export function AgendaCalendarTab({
       {/* DETAIL MODAL */}
       {detailAppointment && (
         <div
-          className="fixed inset-0 z-50 bg-[#331824]/45 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-50 bg-overlay/45 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
           role="dialog"
+          aria-labelledby="agenda-detail-title"
           aria-modal="true"
         >
-          <div className="w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl border border-[#EBC5D5] shadow-xl overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="px-5 py-4 border-b border-[#F5E4EC] flex items-center justify-between bg-[#FFF9FB]">
+          <div className="w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-3xl border border-border shadow-dialog overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-background">
               <div>
-                <span className="text-xs font-semibold text-[#15803D] inline-flex items-center gap-1">
+                <span className="text-xs font-semibold text-success inline-flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>Agendamento confirmado</span>
                 </span>
-                <h3 className="font-display text-2xl font-bold text-[#831843]">
+                <h3 id="agenda-detail-title" className="font-display text-2xl font-bold text-brand-strong">
                   {detailAppointment.clientName}
                 </h3>
               </div>
@@ -810,7 +811,7 @@ export function AgendaCalendarTab({
                   setConfirmDeleteId(null);
                 }}
                 aria-label="Fechar detalhes"
-                className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-[#6E4959] hover:bg-[#FDF2F6]"
+                className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center btn-ghost"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -818,31 +819,31 @@ export function AgendaCalendarTab({
 
             <div className="p-5 space-y-4 overflow-y-auto">
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3.5 rounded-2xl bg-[#FFF9FB] border border-[#F1D8E2]">
-                  <span className="text-xs text-[#7A5464]">Data</span>
-                  <p className="mt-0.5 text-base font-bold text-[#331824] tabular-nums">
+                <div className="p-3.5 rounded-2xl bg-background border border-border">
+                  <span className="text-xs text-text-secondary">Data</span>
+                  <p className="mt-0.5 text-base font-bold text-text-primary tabular-nums">
                     {formatDateBR(detailAppointment.appointmentDate)}
                   </p>
                 </div>
-                <div className="p-3.5 rounded-2xl bg-[#FFF9FB] border border-[#F1D8E2]">
-                  <span className="text-xs text-[#7A5464]">Horário</span>
-                  <p className="mt-0.5 text-base font-bold text-[#831843] tabular-nums inline-flex items-center gap-1.5">
+                <div className="p-3.5 rounded-2xl bg-background border border-border">
+                  <span className="text-xs text-text-secondary">Horário</span>
+                  <p className="mt-0.5 text-base font-bold text-brand-strong tabular-nums inline-flex items-center gap-1.5">
                     <Clock className="w-4 h-4" />
                     <span>{detailAppointment.appointmentTime}</span>
                   </p>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-[#FFF9FB] border border-[#F1D8E2] space-y-1">
-                <span className="text-xs text-[#7A5464]">Serviço(s)</span>
-                <p className="text-base font-semibold text-[#331824]">
+              <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1">
+                <span className="text-xs text-text-secondary">Serviço(s)</span>
+                <p className="text-base font-semibold text-text-primary">
                   {detailAppointment.procedureName}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-[#FFF9FB] border border-[#F1D8E2] space-y-1">
-                <span className="text-xs text-[#7A5464]">WhatsApp da cliente</span>
-                <p className="text-sm font-medium text-[#331824] tabular-nums">
+              <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1">
+                <span className="text-xs text-text-secondary">WhatsApp da cliente</span>
+                <p className="text-sm font-medium text-text-primary tabular-nums">
                   {detailAppointment.whatsapp}
                 </p>
                 <a
@@ -852,7 +853,7 @@ export function AgendaCalendarTab({
                   )}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-2 w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#16A34A] hover:bg-[#15803D] text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+                  className="mt-2 w-full min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors btn-success"
                 >
                   <MessageCircle className="w-4 h-4" />
                   <span>Abrir conversa no WhatsApp</span>
@@ -860,15 +861,15 @@ export function AgendaCalendarTab({
               </div>
 
               {detailAppointment.notes && (
-                <div className="p-3.5 rounded-2xl bg-[#FFF9FB] border border-[#F1D8E2] space-y-1">
-                  <span className="text-xs text-[#7A5464]">Observações</span>
-                  <p className="text-sm text-[#4D2939] whitespace-pre-line">
+                <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1">
+                  <span className="text-xs text-text-secondary">Observações</span>
+                  <p className="text-sm text-text-primary whitespace-pre-line">
                     {detailAppointment.notes}
                   </p>
                 </div>
               )}
 
-              <div className="pt-2 border-t border-[#F5E4EC] space-y-2.5">
+              <div className="pt-2 border-t border-border space-y-2.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -876,15 +877,15 @@ export function AgendaCalendarTab({
                     setDetailAppointment(null);
                     setBookingModal({ kind: 'edit', appointment: appt });
                   }}
-                  className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#9D2A58] hover:bg-[#831843] text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+                  className="w-full min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors btn-primary"
                 >
                   <Edit3 className="w-4 h-4" />
                   <span>Editar ou remarcar horário</span>
                 </button>
 
                 {confirmCancelId === detailAppointment.id ? (
-                  <div className="p-3 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] space-y-2">
-                    <p className="text-xs font-medium text-[#9F1239]">
+                  <div className="p-3 rounded-xl bg-error-soft border border-error-border space-y-2">
+                    <p className="text-xs font-medium text-error">
                       Cancelar este agendamento? O horário voltará a ficar livre.
                     </p>
                     <div className="flex items-center gap-2">
@@ -892,14 +893,14 @@ export function AgendaCalendarTab({
                         type="button"
                         disabled={actionLoading}
                         onClick={() => void handleCancelAppointment(detailAppointment.id)}
-                        className="flex-1 min-h-[40px] px-3 py-1.5 rounded-lg bg-[#9F1239] text-white text-xs font-semibold"
+                        className="flex-1 min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-semibold btn-danger-solid"
                       >
                         {actionLoading ? 'Cancelando...' : 'Confirmar cancelamento'}
                       </button>
                       <button
                         type="button"
                         onClick={() => setConfirmCancelId(null)}
-                        className="min-h-[40px] px-3 py-1.5 rounded-lg bg-white border border-[#EED2DE] text-xs font-semibold text-[#5E3A4A]"
+                        className="min-h-[40px] px-3 py-1.5 rounded-lg bg-surface border border-border text-xs font-semibold text-text-secondary"
                       >
                         Voltar
                       </button>
@@ -912,7 +913,7 @@ export function AgendaCalendarTab({
                       setConfirmDeleteId(null);
                       setConfirmCancelId(detailAppointment.id);
                     }}
-                    className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#FFF9FB] hover:bg-[#FFF1F2] border border-[#EED2DE] text-[#9F1239] text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+                    className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-background border border-border text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors btn-danger"
                   >
                     <XCircle className="w-4 h-4" />
                     <span>Cancelar agendamento</span>
@@ -920,21 +921,21 @@ export function AgendaCalendarTab({
                 )}
 
                 {confirmDeleteId === detailAppointment.id ? (
-                  <div className="p-3 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] flex items-center justify-between gap-2">
-                    <span className="text-xs text-[#9F1239]">Excluir permanentemente?</span>
+                  <div className="p-3 rounded-xl bg-error-soft border border-error-border flex items-center justify-between gap-2">
+                    <span className="text-xs text-error">Excluir permanentemente?</span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         disabled={actionLoading}
                         onClick={() => void handleDeleteAppointment(detailAppointment.id)}
-                        className="px-3 py-1.5 rounded-lg bg-[#9F1239] text-white text-xs font-semibold"
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold btn-danger-solid"
                       >
                         Excluir
                       </button>
                       <button
                         type="button"
                         onClick={() => setConfirmDeleteId(null)}
-                        className="px-3 py-1.5 rounded-lg bg-white border border-[#EED2DE] text-xs font-semibold text-[#5E3A4A]"
+                        className="px-3 py-1.5 rounded-lg bg-surface border border-border text-xs font-semibold text-text-secondary"
                       >
                         Voltar
                       </button>
@@ -947,7 +948,7 @@ export function AgendaCalendarTab({
                       setConfirmCancelId(null);
                       setConfirmDeleteId(detailAppointment.id);
                     }}
-                    className="w-full min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-medium text-[#7A5464] hover:text-[#9F1239] inline-flex items-center justify-center gap-1.5"
+                    className="w-full min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-medium text-text-secondary hover:text-error inline-flex items-center justify-center gap-1.5"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Excluir registro</span>
