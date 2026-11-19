@@ -287,7 +287,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
             {/* 01. Seus dados */}
             <section className="space-y-3">
               <h2 className="text-base font-semibold text-text-primary">01. Seus dados</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1" htmlFor="attendanceform-field-1">
                     Nome completo
