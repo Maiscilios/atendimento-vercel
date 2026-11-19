@@ -1,8 +1,25 @@
 import 'dotenv/config';
 import { Pool } from 'pg';
-import { attachDatabasePool } from '@vercel/functions';
 
 let pool: Pool | undefined;
+
+export function isDatabaseConfigured(): boolean {
+  return Boolean(
+    process.env.DATABASE_URL?.trim() || process.env.POSTGRES_URL?.trim(),
+  );
+}
+
+function createMockPool(): Pool {
+  return {
+    query: async () => ({ rows: [], rowCount: 0 }),
+    connect: async () => ({
+      query: async () => ({ rows: [], rowCount: 0 }),
+      release: () => {},
+    }),
+    end: async () => {},
+    on: () => {},
+  } as unknown as Pool;
+}
 
 export function getDatabase(): Pool {
   if (pool) return pool;
@@ -13,6 +30,13 @@ export function getDatabase(): Pool {
     Boolean(process.env.VERCEL) || process.env.NODE_ENV === 'production';
 
   if (!connectionString) {
+    if (!hosted) {
+      console.warn(
+        '[AI Studio] DATABASE_URL not configured — using in-memory store.',
+      );
+      pool = createMockPool();
+      return pool;
+    }
     throw new Error(
       'Configure DATABASE_URL com a conexão PostgreSQL fornecida pela integração Neon na Vercel.',
     );
@@ -37,18 +61,22 @@ export function getDatabase(): Pool {
     url.searchParams.set('sslmode', 'verify-full');
   }
 
-  pool = new Pool({
-    connectionString: url.toString(),
-    max: 5,
-    idleTimeoutMillis: 5_000,
-    connectionTimeoutMillis: 15_000,
-    allowExitOnIdle: true,
-    enableChannelBinding: true,
-  });
-  pool.on('error', (error) => {
-    console.error('Erro em conexão ociosa com PostgreSQL:', error.message);
-  });
-  if (process.env.VERCEL) attachDatabasePool(pool);
+  try {
+    pool = new Pool({
+      connectionString: url.toString(),
+      max: 5,
+      idleTimeoutMillis: 5_000,
+      connectionTimeoutMillis: 15_000,
+      allowExitOnIdle: true,
+      enableChannelBinding: true,
+    });
+    pool.on('error', (error) => {
+      console.error('Erro em conexão ociosa com PostgreSQL:', error.message);
+    });
+  } catch {
+    console.warn('[AI Studio] DB not connected — mock active');
+    pool = createMockPool();
+  }
   return pool;
 }
 

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { asyncHandler } from './async-handler.ts';
-import { getDatabase } from './database.ts';
+import { getDatabase, isDatabaseConfigured } from './database.ts';
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import cookieParser from 'cookie-parser';
@@ -311,7 +311,9 @@ export function createApiApp() {
     '/api/health',
     asyncHandler(async (_req: Request, res: Response) => {
       await initializeDatabase();
-      await getDatabase().query('SELECT 1');
+      if (isDatabaseConfigured()) {
+        await getDatabase().query('SELECT 1');
+      }
       res.json({ ok: true });
     }),
   );

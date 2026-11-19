@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { PoolClient, QueryResultRow } from 'pg';
-import { getDatabase } from './database.ts';
+import { getDatabase, isDatabaseConfigured } from './database.ts';
 import type {
   AttendanceRecord,
   AuthUser,
@@ -101,9 +101,60 @@ const SCHEMA = `
     ON agenda_appointments(professional, appointment_date ASC, appointment_time ASC);
 `;
 
+interface DbUserRow {
+  id: string;
+  username: string;
+  display_name: string;
+  role: UserRole;
+  professional: Professional;
+  password_hash: string;
+  password_configured: number;
+}
+
+// ============================================================================
+// IN-MEMORY FALLBACK STORE (used when DATABASE_URL / POSTGRES_URL is unset)
+// ============================================================================
+const memoryUsers = new Map<string, DbUserRow>([
+  [
+    'user_lais',
+    {
+      id: 'user_lais',
+      username: 'lais',
+      display_name: 'Laís',
+      role: 'admin',
+      professional: 'lais',
+      password_hash: '',
+      password_configured: 0,
+    },
+  ],
+  [
+    'user_duda',
+    {
+      id: 'user_duda',
+      username: 'duda',
+      display_name: 'Duda',
+      role: 'professional',
+      professional: 'duda',
+      password_hash: '',
+      password_configured: 0,
+    },
+  ],
+]);
+
+const memorySessions = new Map<
+  string,
+  { token: string; user_id: string; expires_at: string; created_at: string }
+>();
+const memoryAttendances = new Map<string, AttendanceRecord>();
+const memoryCommissionPayouts = new Map<string, DbCommissionPayoutRow>();
+const memoryAgendaAppointments = new Map<string, AgendaAppointment>();
+
 let initialization: Promise<void> | undefined;
 
 export function initializeDatabase(): Promise<void> {
+  if (!isDatabaseConfigured()) {
+    return Promise.resolve();
+  }
   initialization ??= prepareDatabase().catch((error) => {
     initialization = undefined;
     throw error;
@@ -168,17 +219,20 @@ export function verifyPassword(password: string, storedHash: string): boolean {
   return crypto.timingSafeEqual(derived, keyBuf);
 }
 
-interface DbUserRow {
-  id: string;
-  username: string;
-  display_name: string;
-  role: UserRole;
-  professional: Professional;
-  password_hash: string;
-  password_configured: number;
-}
-
 export async function getSetupStatus(): Promise<SetupStatus> {
+  if (!isDatabaseConfigured()) {
+    const lais = Array.from(memoryUsers.values()).find(
+      (r) => r.username === 'lais',
+    );
+    const duda = Array.from(memoryUsers.values()).find(
+      (r) => r.username === 'duda',
+    );
+    return {
+      laisConfigured: Boolean(lais && lais.password_configured === 1),
+      dudaConfigured: Boolean(duda && duda.password_configured === 1),
+    };
+  }
+
   const rows = (
     await execute('SELECT username, password_configured FROM users', [])
   ).rows as unknown as Array<{ username: string; password_configured: number }>;
@@ -195,6 +249,15 @@ export async function getSetupStatus(): Promise<SetupStatus> {
 export async function findUserByUsername(
   username: string,
 ): Promise<DbUserRow | null> {
+  if (!isDatabaseConfigured()) {
+    const target = username.trim().toLowerCase();
+    return (
+      Array.from(memoryUsers.values()).find(
+        (u) => u.username.toLowerCase() === target,
+      ) ?? null
+    );
+  }
+
   const row = (
     await execute(
       'SELECT id, username, display_name, role, professional, password_hash, password_configured FROM users WHERE LOWER(username) = LOWER($1)',
@@ -205,6 +268,10 @@ export async function findUserByUsername(
 }
 
 export async function findUserById(userId: string): Promise<DbUserRow | null> {
+  if (!isDatabaseConfigured()) {
+    return memoryUsers.get(userId) ?? null;
+  }
+
   const row = (
     await execute(
       'SELECT id, username, display_name, role, professional, password_hash, password_configured FROM users WHERE id = $1',
@@ -218,6 +285,14 @@ export async function configureInitialPassword(
   userId: string,
   password: string,
 ): Promise<boolean> {
+  if (!isDatabaseConfigured()) {
+    const user = memoryUsers.get(userId);
+    if (!user || user.password_configured !== 0) return false;
+    user.password_hash = hashPassword(password);
+    user.password_configured = 1;
+    return true;
+  }
+
   const result = await execute(
     'UPDATE users SET password_hash = $1, password_configured = 1 WHERE id = $2 AND password_configured = 0',
     [hashPassword(password), userId],
@@ -229,6 +304,15 @@ export async function updateUserPassword(
   userId: string,
   newPassword: string,
 ): Promise<void> {
+  if (!isDatabaseConfigured()) {
+    const user = memoryUsers.get(userId);
+    if (user) {
+      user.password_hash = hashPassword(newPassword);
+      user.password_configured = 1;
+    }
+    return;
+  }
+
   await execute(
     'UPDATE users SET password_hash = $1, password_configured = 1 WHERE id = $2',
     [hashPassword(newPassword), userId],
@@ -236,6 +320,17 @@ export async function updateUserPassword(
 }
 
 export async function resetUserPasswordSetup(username: 'duda'): Promise<void> {
+  if (!isDatabaseConfigured()) {
+    const row = await findUserByUsername(username);
+    if (!row) return;
+    row.password_hash = '';
+    row.password_configured = 0;
+    for (const [token, session] of memorySessions.entries()) {
+      if (session.user_id === row.id) memorySessions.delete(token);
+    }
+    return;
+  }
+
   const row = await findUserByUsername(username);
   if (!row) return;
   await execute(
@@ -253,6 +348,16 @@ export async function createSession(
   const expires = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30);
   const expiresAt = expires.toISOString();
 
+  if (!isDatabaseConfigured()) {
+    memorySessions.set(token, {
+      token,
+      user_id: userId,
+      expires_at: expiresAt,
+      created_at: now.toISOString(),
+    });
+    return { token, expiresAt };
+  }
+
   await execute(
     'INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES ($1, $2, $3, $4)',
     [token, userId, expiresAt, now.toISOString()],
@@ -266,6 +371,24 @@ export async function getSessionUser(
 ): Promise<AuthUser | null> {
   if (!token) return null;
 
+  if (!isDatabaseConfigured()) {
+    const session = memorySessions.get(token);
+    if (!session) return null;
+    const user = memoryUsers.get(session.user_id);
+    if (!user || user.password_configured !== 1) return null;
+    if (new Date(session.expires_at).getTime() <= Date.now()) {
+      memorySessions.delete(token);
+      return null;
+    }
+    return {
+      id: user.id,
+      username: user.username,
+      displayName: user.display_name,
+      role: user.role,
+      professional: user.professional,
+    };
+  }
+
   const row = (
     await execute(
       `
@@ -277,7 +400,8 @@ export async function getSessionUser(
       [token],
     )
   ).rows[0] as unknown as
-    (Omit<DbUserRow, 'password_hash'> & { expires_at: string }) | undefined;
+    | (Omit<DbUserRow, 'password_hash'> & { expires_at: string })
+    | undefined;
 
   if (!row || row.password_configured !== 1) return null;
 
@@ -296,6 +420,10 @@ export async function getSessionUser(
 }
 
 export async function deleteSession(token: string): Promise<void> {
+  if (!isDatabaseConfigured()) {
+    memorySessions.delete(token);
+    return;
+  }
   await execute('DELETE FROM sessions WHERE token = $1', [token]);
 }
 
@@ -389,6 +517,31 @@ export async function insertAttendance(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
+  if (!isDatabaseConfigured()) {
+    const record: AttendanceRecord = {
+      id,
+      professional: input.professional,
+      clientName: input.clientName,
+      whatsapp: input.whatsapp,
+      whatsappDigits: input.whatsappDigits,
+      serviceDate: input.serviceDate,
+      services: input.services,
+      additionals: input.additionals,
+      totalPaid: input.totalPaid,
+      commissionRate: input.commissionRate,
+      commissionAmount: input.commissionAmount,
+      returnOption: input.returnOption,
+      returnDays: input.returnDays,
+      returnDate: input.returnDate,
+      preferredTimes: input.preferredTimes,
+      returnStatus: input.returnStatus,
+      createdAt: now,
+      updatedAt: now,
+    };
+    memoryAttendances.set(id, record);
+    return record;
+  }
+
   await execute(
     `
     INSERT INTO attendances (
@@ -439,44 +592,67 @@ export interface AttendanceQueryFilters {
 export async function queryAttendances(
   filters: AttendanceQueryFilters,
 ): Promise<AttendanceRecord[]> {
-  const clauses: string[] = [];
-  const params: Array<string | number> = [];
+  let records: AttendanceRecord[];
 
-  if (filters.professional) {
-    params.push(filters.professional);
-    clauses.push(`professional = $${params.length}`);
+  if (!isDatabaseConfigured()) {
+    records = Array.from(memoryAttendances.values())
+      .filter((rec) => {
+        if (filters.professional && rec.professional !== filters.professional)
+          return false;
+        if (filters.startDate && rec.serviceDate < filters.startDate)
+          return false;
+        if (filters.endDate && rec.serviceDate > filters.endDate) return false;
+        if (filters.returnStatus && rec.returnStatus !== filters.returnStatus)
+          return false;
+        if (filters.onlyReturns && rec.returnOption === 'no_schedule')
+          return false;
+        return true;
+      })
+      .sort(
+        (a, b) =>
+          b.serviceDate.localeCompare(a.serviceDate) ||
+          b.createdAt.localeCompare(a.createdAt),
+      );
+  } else {
+    const clauses: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (filters.professional) {
+      params.push(filters.professional);
+      clauses.push(`professional = $${params.length}`);
+    }
+
+    if (filters.startDate) {
+      params.push(filters.startDate);
+      clauses.push(`service_date >= $${params.length}`);
+    }
+
+    if (filters.endDate) {
+      params.push(filters.endDate);
+      clauses.push(`service_date <= $${params.length}`);
+    }
+
+    if (filters.returnStatus) {
+      params.push(filters.returnStatus);
+      clauses.push(`return_status = $${params.length}`);
+    }
+
+    if (filters.onlyReturns) {
+      clauses.push("return_option != 'no_schedule'");
+    }
+
+    const whereClause =
+      clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const sql = `
+      SELECT * FROM attendances
+      ${whereClause}
+      ORDER BY service_date DESC, created_at DESC
+    `;
+
+    const rows = (await execute(sql, [...params]))
+      .rows as unknown as DbAttendanceRow[];
+    records = rows.map(mapAttendanceRow);
   }
-
-  if (filters.startDate) {
-    params.push(filters.startDate);
-    clauses.push(`service_date >= $${params.length}`);
-  }
-
-  if (filters.endDate) {
-    params.push(filters.endDate);
-    clauses.push(`service_date <= $${params.length}`);
-  }
-
-  if (filters.returnStatus) {
-    params.push(filters.returnStatus);
-    clauses.push(`return_status = $${params.length}`);
-  }
-
-  if (filters.onlyReturns) {
-    clauses.push("return_option != 'no_schedule'");
-  }
-
-  const whereClause =
-    clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
-  const sql = `
-    SELECT * FROM attendances
-    ${whereClause}
-    ORDER BY service_date DESC, created_at DESC
-  `;
-
-  const rows = (await execute(sql, [...params]))
-    .rows as unknown as DbAttendanceRow[];
-  let records = rows.map(mapAttendanceRow);
 
   if (filters.serviceId && filters.serviceId !== 'all') {
     records = records.filter((rec) =>
@@ -504,6 +680,9 @@ export async function queryAttendances(
 export async function getAttendanceById(
   id: string,
 ): Promise<AttendanceRecord | null> {
+  if (!isDatabaseConfigured()) {
+    return memoryAttendances.get(id) ?? null;
+  }
   const row = (await execute('SELECT * FROM attendances WHERE id = $1', [id]))
     .rows[0] as unknown as DbAttendanceRow | undefined;
   return row ? mapAttendanceRow(row) : null;
@@ -514,6 +693,13 @@ export async function updateAttendanceReturnStatus(
   status: 'waiting' | 'confirmed',
 ): Promise<AttendanceRecord | null> {
   const now = new Date().toISOString();
+  if (!isDatabaseConfigured()) {
+    const existing = memoryAttendances.get(id);
+    if (!existing) return null;
+    const updated = { ...existing, returnStatus: status, updatedAt: now };
+    memoryAttendances.set(id, updated);
+    return updated;
+  }
   await execute(
     'UPDATE attendances SET return_status = $1, updated_at = $2 WHERE id = $3',
     [status, now, id],
@@ -522,6 +708,20 @@ export async function updateAttendanceReturnStatus(
 }
 
 export async function deleteAttendanceById(id: string): Promise<boolean> {
+  if (!isDatabaseConfigured()) {
+    const deleted = memoryAttendances.delete(id);
+    if (deleted) {
+      for (const [apptId, appt] of memoryAgendaAppointments.entries()) {
+        if (appt.sourceAttendanceId === id) {
+          memoryAgendaAppointments.set(apptId, {
+            ...appt,
+            sourceAttendanceId: null,
+          });
+        }
+      }
+    }
+    return deleted;
+  }
   const info = await execute('DELETE FROM attendances WHERE id = $1', [id]);
   return (info.rowCount ?? 0) > 0;
 }
@@ -537,6 +737,9 @@ export interface DbCommissionPayoutRow {
 export async function getAllCommissionPayoutsMap(): Promise<
   Map<string, DbCommissionPayoutRow>
 > {
+  if (!isDatabaseConfigured()) {
+    return new Map(memoryCommissionPayouts);
+  }
   const rows = (await execute('SELECT * FROM commission_payouts', []))
     .rows as unknown as DbCommissionPayoutRow[];
   const map = new Map<string, DbCommissionPayoutRow>();
@@ -549,6 +752,9 @@ export async function getAllCommissionPayoutsMap(): Promise<
 export async function getCommissionPayoutByDate(
   date: string,
 ): Promise<DbCommissionPayoutRow | null> {
+  if (!isDatabaseConfigured()) {
+    return memoryCommissionPayouts.get(date) ?? null;
+  }
   const row = (
     await execute('SELECT * FROM commission_payouts WHERE payout_date = $1', [
       date,
@@ -564,6 +770,18 @@ export async function upsertCommissionPayoutStatus(
 ): Promise<DbCommissionPayoutRow> {
   const now = new Date().toISOString();
   const paidAt = status === 'paid' ? now : null;
+
+  if (!isDatabaseConfigured()) {
+    const row: DbCommissionPayoutRow = {
+      payout_date: date,
+      status,
+      paid_at: paidAt,
+      updated_by: updatedBy,
+      updated_at: now,
+    };
+    memoryCommissionPayouts.set(date, row);
+    return row;
+  }
 
   await execute(
     `
@@ -640,6 +858,26 @@ export async function listAgendaAppointments(options: {
   endDate?: string;
   includeCancelled?: boolean;
 }): Promise<AgendaAppointment[]> {
+  if (!isDatabaseConfigured()) {
+    return Array.from(memoryAgendaAppointments.values())
+      .filter((appt) => {
+        if (appt.professional !== options.professional) return false;
+        if (!options.includeCancelled && appt.status !== 'confirmed')
+          return false;
+        if (options.startDate && appt.appointmentDate < options.startDate)
+          return false;
+        if (options.endDate && appt.appointmentDate > options.endDate)
+          return false;
+        return true;
+      })
+      .sort(
+        (a, b) =>
+          a.appointmentDate.localeCompare(b.appointmentDate) ||
+          a.appointmentTime.localeCompare(b.appointmentTime) ||
+          a.createdAt.localeCompare(b.createdAt),
+      );
+  }
+
   const clauses = ['professional = $1'];
   const params = [options.professional] as string[];
   if (!options.includeCancelled) clauses.push("status = 'confirmed'");
@@ -666,6 +904,9 @@ export async function getAgendaAppointmentById(
   id: string,
   client?: PoolClient,
 ): Promise<AgendaAppointment | null> {
+  if (!isDatabaseConfigured()) {
+    return memoryAgendaAppointments.get(id) ?? null;
+  }
   const { rows } = await execute<DbAgendaRow>(
     'SELECT * FROM agenda_appointments WHERE id = $1',
     [id],
@@ -681,6 +922,19 @@ export async function findConfirmedSlotOwner(
   excludeId?: string,
   client?: PoolClient,
 ): Promise<AgendaAppointment | null> {
+  if (!isDatabaseConfigured()) {
+    return (
+      Array.from(memoryAgendaAppointments.values()).find(
+        (appt) =>
+          appt.professional === professional &&
+          appt.appointmentDate === appointmentDate &&
+          appt.appointmentTime === appointmentTime &&
+          appt.status === 'confirmed' &&
+          (!excludeId || appt.id !== excludeId),
+      ) ?? null
+    );
+  }
+
   const { rows } = await execute<DbAgendaRow>(
     `
     SELECT * FROM agenda_appointments
@@ -710,6 +964,27 @@ export async function createAgendaAppointment(
   client?: PoolClient,
 ): Promise<AgendaAppointment> {
   const now = new Date().toISOString();
+
+  if (!isDatabaseConfigured()) {
+    const appt: AgendaAppointment = {
+      id: crypto.randomUUID(),
+      professional: input.professional,
+      sourceAttendanceId: input.sourceAttendanceId ?? null,
+      clientName: input.clientName,
+      whatsapp: input.whatsapp,
+      whatsappDigits: input.whatsappDigits,
+      procedureName: input.procedureName,
+      appointmentDate: input.appointmentDate,
+      appointmentTime: input.appointmentTime,
+      notes: input.notes,
+      status: 'confirmed',
+      createdAt: now,
+      updatedAt: now,
+    };
+    memoryAgendaAppointments.set(appt.id, appt);
+    return appt;
+  }
+
   const { rows } = await execute<DbAgendaRow>(
     `
     INSERT INTO agenda_appointments (
@@ -744,6 +1019,62 @@ export async function confirmAttendanceReturnToAgenda(input: {
   procedureName: string;
   notes?: string;
 }): Promise<{ appointment: AgendaAppointment; attendance: AttendanceRecord }> {
+  if (!isDatabaseConfigured()) {
+    const source = memoryAttendances.get(input.attendanceId);
+    if (!source) {
+      throw new Error('NOT_FOUND:Solicitação de retorno não encontrada.');
+    }
+    if (
+      input.expectedProfessional &&
+      source.professional !== input.expectedProfessional
+    ) {
+      throw new Error(
+        'FORBIDDEN:Você só pode adicionar à agenda os retornos das suas próprias clientes.',
+      );
+    }
+    if (source.returnOption === 'no_schedule') {
+      throw new Error(
+        'BAD_REQUEST:Este atendimento não possui solicitação de retorno.',
+      );
+    }
+    const alreadyBooked = Array.from(memoryAgendaAppointments.values()).some(
+      (a) => a.sourceAttendanceId === source.id && a.status === 'confirmed',
+    );
+    if (alreadyBooked) {
+      throw new Error(
+        'CONFLICT:Esta solicitação já foi confirmada e adicionada à agenda.',
+      );
+    }
+    const owner = await findConfirmedSlotOwner(
+      source.professional,
+      input.appointmentDate,
+      input.appointmentTime,
+    );
+    if (owner) {
+      throw new Error(
+        `CONFLICT:Já existe um agendamento confirmado para ${owner.clientName} neste dia e horário (${input.appointmentTime}).`,
+      );
+    }
+    const appointment = await createAgendaAppointment({
+      professional: source.professional,
+      sourceAttendanceId: source.id,
+      clientName: source.clientName,
+      whatsapp: source.whatsapp,
+      whatsappDigits: source.whatsappDigits,
+      procedureName: input.procedureName.trim(),
+      appointmentDate: input.appointmentDate,
+      appointmentTime: input.appointmentTime,
+      notes: input.notes?.trim() ?? '',
+    });
+    const updatedAttendance: AttendanceRecord = {
+      ...source,
+      returnStatus: 'confirmed',
+      updatedAt: new Date().toISOString(),
+    };
+    memoryAttendances.set(source.id, updatedAttendance);
+    return { appointment, attendance: updatedAttendance };
+  }
+
   return withTransaction(async (client) => {
     const { rows } = await execute<DbAttendanceRow>(
       'SELECT * FROM attendances WHERE id = $1 FOR UPDATE',
@@ -815,6 +1146,24 @@ export async function updateAgendaAppointment(
   id: string,
   updates: Omit<CreateAgendaInput, 'professional' | 'sourceAttendanceId'>,
 ): Promise<AgendaAppointment | null> {
+  if (!isDatabaseConfigured()) {
+    const existing = memoryAgendaAppointments.get(id);
+    if (!existing || existing.status !== 'confirmed') return null;
+    const updated: AgendaAppointment = {
+      ...existing,
+      clientName: updates.clientName,
+      whatsapp: updates.whatsapp,
+      whatsappDigits: updates.whatsappDigits,
+      procedureName: updates.procedureName,
+      appointmentDate: updates.appointmentDate,
+      appointmentTime: updates.appointmentTime,
+      notes: updates.notes,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryAgendaAppointments.set(id, updated);
+    return updated;
+  }
+
   const { rows } = await execute<DbAgendaRow>(
     `
     UPDATE agenda_appointments
@@ -862,8 +1211,24 @@ async function lockAgendaAppointment(
 
 async function reopenUnbookedReturn(
   sourceId: string,
-  client: PoolClient,
+  client?: PoolClient,
 ): Promise<void> {
+  if (!isDatabaseConfigured()) {
+    const source = memoryAttendances.get(sourceId);
+    if (!source || source.returnOption === 'no_schedule') return;
+    const hasConfirmed = Array.from(memoryAgendaAppointments.values()).some(
+      (a) => a.sourceAttendanceId === sourceId && a.status === 'confirmed',
+    );
+    if (!hasConfirmed) {
+      memoryAttendances.set(sourceId, {
+        ...source,
+        returnStatus: 'waiting',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return;
+  }
+
   await execute(
     `
     UPDATE attendances SET return_status = 'waiting', updated_at = $1
@@ -881,6 +1246,21 @@ async function reopenUnbookedReturn(
 export async function cancelAgendaAppointment(
   id: string,
 ): Promise<AgendaAppointment | null> {
+  if (!isDatabaseConfigured()) {
+    const existing = memoryAgendaAppointments.get(id);
+    if (!existing) return null;
+    const cancelled: AgendaAppointment = {
+      ...existing,
+      status: 'cancelled',
+      updatedAt: new Date().toISOString(),
+    };
+    memoryAgendaAppointments.set(id, cancelled);
+    if (existing.sourceAttendanceId) {
+      await reopenUnbookedReturn(existing.sourceAttendanceId);
+    }
+    return cancelled;
+  }
+
   return withTransaction(async (client) => {
     const existing = await lockAgendaAppointment(id, client);
     if (!existing) return null;
@@ -896,6 +1276,16 @@ export async function cancelAgendaAppointment(
 }
 
 export async function deleteAgendaAppointment(id: string): Promise<boolean> {
+  if (!isDatabaseConfigured()) {
+    const existing = memoryAgendaAppointments.get(id);
+    if (!existing) return false;
+    memoryAgendaAppointments.delete(id);
+    if (existing.sourceAttendanceId) {
+      await reopenUnbookedReturn(existing.sourceAttendanceId);
+    }
+    return true;
+  }
+
   return withTransaction(async (client) => {
     const existing = await lockAgendaAppointment(id, client);
     if (!existing) return false;
