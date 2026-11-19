@@ -271,7 +271,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
         <div className="bg-surface border border-border rounded-3xl p-5 sm:p-8 shadow-card">
           <div className="pb-4 border-b border-border flex flex-wrap items-baseline justify-between gap-2">
             <div>
-              <h1 className="font-display text-3xl font-bold text-brand-strong">
+              <h1 className="font-display text-[33px] font-bold text-brand-strong">
                 Confirme seu atendimento
               </h1>
               <p className="mt-0.5 text-sm sm:text-base font-medium text-text-secondary">
@@ -289,7 +289,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
               <h2 className="text-base font-semibold text-text-primary">01. Seus dados</h2>
               <div className="grid grid-cols-1 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1" htmlFor="attendanceform-field-1">
+                  <label className="block text-[20px] font-medium text-text-secondary mb-1" htmlFor="attendanceform-field-1">
                     Nome completo
                   </label>
                   <input
@@ -302,8 +302,9 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1" htmlFor="attendanceform-field-2">
-                    WhatsApp
+                  <label className="block text-[20px] font-medium text-text-secondary mb-1" htmlFor="attendanceform-field-2">
+                    WhatsApp{' '}
+                    <span className="font-semibold text-red-600">(obrigatório)</span>
                   </label>
                   <input
                     type="tel"
@@ -321,7 +322,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
             {/* 02. Valor do atendimento */}
             <section className="space-y-2 pt-4 border-t border-border">
               <h2 className="text-base font-semibold text-text-primary">02. Valor do atendimento</h2>
-              <label className="block text-sm text-text-secondary" htmlFor="attendanceform-field-3">
+              <label className="block text-[20px] text-text-secondary" htmlFor="attendanceform-field-3">
                 Qual foi o valor total pago, incluindo o sinal?
               </label>
               <div className="relative max-w-xs">
@@ -423,7 +424,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                 <h2 className="text-base font-semibold text-text-primary">
                   {isDuda ? '05. Próxima manutenção' : '04. Próxima manutenção'}
                 </h2>
-                <p className="text-sm text-text-secondary mt-0.5">
+                <p className="text-[20px] text-text-secondary mt-0.5">
                   Deseja deixar seu retorno pré-agendado?
                 </p>
               </div>
