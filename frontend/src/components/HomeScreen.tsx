@@ -33,13 +33,13 @@ export function HomeScreen({
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col justify-center px-4 sm:px-8 py-8 sm:py-12">
-        <div className="w-full max-w-5xl mx-auto bg-surface border border-border border-t-4 border-t-brand rounded-3xl p-7 sm:p-12 md:p-16 shadow-card flex flex-col justify-center">
+      <main className="flex-1 flex flex-col justify-center px-4 sm:px-8 py-8 sm:py-12 bg-[#dd57a5]">
+        <div className="w-full max-w-5xl mx-auto bg-[#dd57a5] p-7 sm:p-12 md:p-16 flex flex-col justify-center">
           <div className="text-center">
-            <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-brand-strong [text-wrap:balance]">
+            <h1 className="font-['Times_New_Roman',Times,serif] text-3xl sm:text-4xl md:text-5xl font-bold text-[#ffffff] [text-wrap:balance]">
               Confirme seu atendimento
             </h1>
-            <p className="mt-2 text-base sm:text-lg text-text-secondary">
+            <p className="mt-2 text-base sm:text-lg text-[#000000] font-bold">
               Com quem foi realizado seu atendimento?
             </p>
 
