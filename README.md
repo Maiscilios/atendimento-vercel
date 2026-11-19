@@ -4,6 +4,10 @@ O sistema tem frontend React/Vite e backend Express, publicados no **mesmo proje
 
 A aplicação usa `pg` com um pool de conexões e o gerenciamento de conexões de `@vercel/functions`, recomendado para Vercel Fluid compute. O banco é acessado exclusivamente pelo backend. A autenticação continua sendo a do aplicativo: contas `lais` e `duda`, senhas individuais e sessões no banco.
 
+A aba **Minha agenda** permite consultar o calendário por dia, semana ou mês, criar horários manualmente e confirmar solicitações de retorno com data e horário definidos. É possível editar, remarcar, cancelar e excluir agendamentos. Duda acessa sua própria agenda; Laís pode gerenciar as duas profissionais. O banco impede horários confirmados duplicados para a mesma profissional.
+
+A atualização cria a tabela `agenda_appointments` e seus índices automaticamente na inicialização, preservando os registros existentes. Não exige novas variáveis de ambiente; basta publicar esta versão. Cancelamentos e exclusões liberam o horário e devolvem a solicitação de retorno à situação de espera quando ela não tem outro agendamento confirmado.
+
 ## Criar e conectar o Neon pela Vercel
 
 1. Crie/importe o projeto na Vercel, usando a raiz onde estão `package.json` e `vercel.json`. Se a primeira publicação ainda não tiver banco, o build pode concluir; a API só funcionará após conectar o Neon e republicar.

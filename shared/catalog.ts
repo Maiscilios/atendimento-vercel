@@ -111,16 +111,16 @@ export interface ReturnOptionMeta {
 }
 
 export const DUDA_RETURN_OPTIONS: ReturnOptionMeta[] = [
-  { value: '15_days', label: 'Daqui a 15 dias', days: 15 },
-  { value: '20_days', label: 'Daqui a 20 dias', days: 20 },
-  { value: '25_days', label: 'Daqui a 25 dias', days: 25 },
+  { value: '15_days', label: '15 dias', days: 15 },
+  { value: '20_days', label: '20 dias', days: 20 },
+  { value: '25_days', label: '25 dias', days: 25 },
   { value: 'to_arrange', label: 'Dia a combinar', days: null },
   { value: 'no_schedule', label: 'Não desejo agendar no momento', days: null },
 ];
 
 export const LAIS_RETURN_OPTIONS: ReturnOptionMeta[] = [
-  { value: '15_days', label: 'Daqui a 15 dias', days: 15 },
-  { value: '20_days', label: 'Daqui a 20 dias', days: 20 },
+  { value: '15_days', label: '15 dias', days: 15 },
+  { value: '20_days', label: '20 dias', days: 20 },
   { value: 'to_arrange', label: 'Dia a combinar', days: null },
   { value: 'no_schedule', label: 'Não desejo agendar no momento', days: null },
 ];

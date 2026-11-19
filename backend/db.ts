@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { QueryResultRow } from 'pg';
+import type { PoolClient, QueryResultRow } from 'pg';
 import { getDatabase } from './database.ts';
 import type {
   AttendanceRecord,
@@ -10,7 +10,12 @@ import type {
   ServiceItem,
   UserRole,
 } from '../shared/catalog.ts';
-import type { PayoutStatus, SetupStatus } from '../shared/panelTypes.ts';
+import type {
+  AgendaAppointment,
+  AgendaAppointmentStatus,
+  PayoutStatus,
+  SetupStatus,
+} from '../shared/panelTypes.ts';
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS users (
@@ -66,6 +71,34 @@ const SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_attendances_whatsapp
     ON attendances(whatsapp_digits);
+
+  CREATE TABLE IF NOT EXISTS agenda_appointments (
+    id TEXT PRIMARY KEY,
+    professional TEXT NOT NULL CHECK(professional IN ('lais', 'duda')),
+    source_attendance_id TEXT,
+    client_name TEXT NOT NULL,
+    whatsapp TEXT NOT NULL,
+    whatsapp_digits TEXT NOT NULL,
+    procedure_name TEXT NOT NULL,
+    appointment_date TEXT NOT NULL,
+    appointment_time TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL CHECK(status IN ('confirmed', 'cancelled')) DEFAULT 'confirmed',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (source_attendance_id) REFERENCES attendances(id) ON DELETE SET NULL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_agenda_unique_slot
+    ON agenda_appointments(professional, appointment_date, appointment_time)
+    WHERE status = 'confirmed';
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_agenda_unique_source
+    ON agenda_appointments(source_attendance_id)
+    WHERE source_attendance_id IS NOT NULL AND status = 'confirmed';
+
+  CREATE INDEX IF NOT EXISTS idx_agenda_prof_date
+    ON agenda_appointments(professional, appointment_date ASC, appointment_time ASC);
 `;
 
 let initialization: Promise<void> | undefined;
@@ -111,9 +144,10 @@ async function prepareDatabase(): Promise<void> {
 async function execute<T extends QueryResultRow = QueryResultRow>(
   sql: string,
   args: Array<string | number | null> = [],
+  client?: PoolClient,
 ) {
   await initializeDatabase();
-  return getDatabase().query<T>(sql, args);
+  return (client ?? getDatabase()).query<T>(sql, args);
 }
 
 export function hashPassword(password: string): string {
@@ -545,4 +579,333 @@ export async function upsertCommissionPayoutStatus(
   );
 
   return (await getCommissionPayoutByDate(date))!;
+}
+
+// Agenda operations share the same PostgreSQL client throughout each transaction.
+async function withTransaction<T>(
+  action: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  await initializeDatabase();
+  const client = await getDatabase().connect();
+  try {
+    await client.query('BEGIN');
+    const result = await action(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+interface DbAgendaRow {
+  id: string;
+  professional: Professional;
+  source_attendance_id: string | null;
+  client_name: string;
+  whatsapp: string;
+  whatsapp_digits: string;
+  procedure_name: string;
+  appointment_date: string;
+  appointment_time: string;
+  notes: string;
+  status: AgendaAppointmentStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapAgendaRow(row: DbAgendaRow): AgendaAppointment {
+  return {
+    id: row.id,
+    professional: row.professional,
+    sourceAttendanceId: row.source_attendance_id,
+    clientName: row.client_name,
+    whatsapp: row.whatsapp,
+    whatsappDigits: row.whatsapp_digits,
+    procedureName: row.procedure_name,
+    appointmentDate: row.appointment_date,
+    appointmentTime: row.appointment_time,
+    notes: row.notes,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listAgendaAppointments(options: {
+  professional: Professional;
+  startDate?: string;
+  endDate?: string;
+  includeCancelled?: boolean;
+}): Promise<AgendaAppointment[]> {
+  const clauses = ['professional = $1'];
+  const params = [options.professional] as string[];
+  if (!options.includeCancelled) clauses.push("status = 'confirmed'");
+  if (options.startDate) {
+    params.push(options.startDate);
+    clauses.push(`appointment_date >= $${params.length}`);
+  }
+  if (options.endDate) {
+    params.push(options.endDate);
+    clauses.push(`appointment_date <= $${params.length}`);
+  }
+  const { rows } = await execute<DbAgendaRow>(
+    `
+    SELECT * FROM agenda_appointments
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY appointment_date ASC, appointment_time ASC, created_at ASC
+  `,
+    params,
+  );
+  return rows.map(mapAgendaRow);
+}
+
+export async function getAgendaAppointmentById(
+  id: string,
+  client?: PoolClient,
+): Promise<AgendaAppointment | null> {
+  const { rows } = await execute<DbAgendaRow>(
+    'SELECT * FROM agenda_appointments WHERE id = $1',
+    [id],
+    client,
+  );
+  return rows[0] ? mapAgendaRow(rows[0]) : null;
+}
+
+export async function findConfirmedSlotOwner(
+  professional: Professional,
+  appointmentDate: string,
+  appointmentTime: string,
+  excludeId?: string,
+  client?: PoolClient,
+): Promise<AgendaAppointment | null> {
+  const { rows } = await execute<DbAgendaRow>(
+    `
+    SELECT * FROM agenda_appointments
+    WHERE professional = $1 AND appointment_date = $2 AND appointment_time = $3
+      AND status = 'confirmed' AND ($4::text IS NULL OR id <> $4)
+  `,
+    [professional, appointmentDate, appointmentTime, excludeId ?? null],
+    client,
+  );
+  return rows[0] ? mapAgendaRow(rows[0]) : null;
+}
+
+export interface CreateAgendaInput {
+  professional: Professional;
+  sourceAttendanceId?: string | null;
+  clientName: string;
+  whatsapp: string;
+  whatsappDigits: string;
+  procedureName: string;
+  appointmentDate: string;
+  appointmentTime: string;
+  notes: string;
+}
+
+export async function createAgendaAppointment(
+  input: CreateAgendaInput,
+  client?: PoolClient,
+): Promise<AgendaAppointment> {
+  const now = new Date().toISOString();
+  const { rows } = await execute<DbAgendaRow>(
+    `
+    INSERT INTO agenda_appointments (
+      id, professional, source_attendance_id, client_name, whatsapp, whatsapp_digits,
+      procedure_name, appointment_date, appointment_time, notes, status, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed', $11, $11)
+    RETURNING *
+  `,
+    [
+      crypto.randomUUID(),
+      input.professional,
+      input.sourceAttendanceId ?? null,
+      input.clientName,
+      input.whatsapp,
+      input.whatsappDigits,
+      input.procedureName,
+      input.appointmentDate,
+      input.appointmentTime,
+      input.notes,
+      now,
+    ],
+    client,
+  );
+  return mapAgendaRow(rows[0]);
+}
+
+export async function confirmAttendanceReturnToAgenda(input: {
+  attendanceId: string;
+  expectedProfessional?: Professional;
+  appointmentDate: string;
+  appointmentTime: string;
+  procedureName: string;
+  notes?: string;
+}): Promise<{ appointment: AgendaAppointment; attendance: AttendanceRecord }> {
+  return withTransaction(async (client) => {
+    const { rows } = await execute<DbAttendanceRow>(
+      'SELECT * FROM attendances WHERE id = $1 FOR UPDATE',
+      [input.attendanceId],
+      client,
+    );
+    const source = rows[0];
+    if (!source)
+      throw new Error('NOT_FOUND:Solicitação de retorno não encontrada.');
+    if (
+      input.expectedProfessional &&
+      source.professional !== input.expectedProfessional
+    ) {
+      throw new Error(
+        'FORBIDDEN:Você só pode adicionar à agenda os retornos das suas próprias clientes.',
+      );
+    }
+    if (source.return_option === 'no_schedule') {
+      throw new Error(
+        'BAD_REQUEST:Este atendimento não possui solicitação de retorno.',
+      );
+    }
+    const existing = await execute<DbAgendaRow>(
+      "SELECT * FROM agenda_appointments WHERE source_attendance_id = $1 AND status = 'confirmed'",
+      [source.id],
+      client,
+    );
+    if (existing.rows.length) {
+      throw new Error(
+        'CONFLICT:Esta solicitação já foi confirmada e adicionada à agenda.',
+      );
+    }
+    const owner = await findConfirmedSlotOwner(
+      source.professional,
+      input.appointmentDate,
+      input.appointmentTime,
+      undefined,
+      client,
+    );
+    if (owner) {
+      throw new Error(
+        `CONFLICT:Já existe um agendamento confirmado para ${owner.clientName} neste dia e horário (${input.appointmentTime}).`,
+      );
+    }
+    const appointment = await createAgendaAppointment(
+      {
+        professional: source.professional,
+        sourceAttendanceId: source.id,
+        clientName: source.client_name,
+        whatsapp: source.whatsapp,
+        whatsappDigits: source.whatsapp_digits,
+        procedureName: input.procedureName.trim(),
+        appointmentDate: input.appointmentDate,
+        appointmentTime: input.appointmentTime,
+        notes: input.notes?.trim() ?? '',
+      },
+      client,
+    );
+    const updated = await execute<DbAttendanceRow>(
+      "UPDATE attendances SET return_status = 'confirmed', updated_at = $1 WHERE id = $2 RETURNING *",
+      [new Date().toISOString(), source.id],
+      client,
+    );
+    return { appointment, attendance: mapAttendanceRow(updated.rows[0]) };
+  });
+}
+
+export async function updateAgendaAppointment(
+  id: string,
+  updates: Omit<CreateAgendaInput, 'professional' | 'sourceAttendanceId'>,
+): Promise<AgendaAppointment | null> {
+  const { rows } = await execute<DbAgendaRow>(
+    `
+    UPDATE agenda_appointments
+    SET client_name = $1, whatsapp = $2, whatsapp_digits = $3, procedure_name = $4,
+        appointment_date = $5, appointment_time = $6, notes = $7, updated_at = $8
+    WHERE id = $9 AND status = 'confirmed'
+    RETURNING *
+  `,
+    [
+      updates.clientName,
+      updates.whatsapp,
+      updates.whatsappDigits,
+      updates.procedureName,
+      updates.appointmentDate,
+      updates.appointmentTime,
+      updates.notes,
+      new Date().toISOString(),
+      id,
+    ],
+  );
+  return rows[0] ? mapAgendaRow(rows[0]) : null;
+}
+
+async function lockAgendaAppointment(
+  id: string,
+  client: PoolClient,
+): Promise<AgendaAppointment | null> {
+  const existing = await getAgendaAppointmentById(id, client);
+  if (!existing) return null;
+  // Keep the same lock order as confirmation: attendance, then appointment.
+  if (existing.sourceAttendanceId) {
+    await execute(
+      'SELECT id FROM attendances WHERE id = $1 FOR UPDATE',
+      [existing.sourceAttendanceId],
+      client,
+    );
+  }
+  const { rows } = await execute<DbAgendaRow>(
+    'SELECT * FROM agenda_appointments WHERE id = $1 FOR UPDATE',
+    [id],
+    client,
+  );
+  return rows[0] ? mapAgendaRow(rows[0]) : null;
+}
+
+async function reopenUnbookedReturn(
+  sourceId: string,
+  client: PoolClient,
+): Promise<void> {
+  await execute(
+    `
+    UPDATE attendances SET return_status = 'waiting', updated_at = $1
+    WHERE id = $2 AND return_option <> 'no_schedule'
+      AND NOT EXISTS (
+        SELECT 1 FROM agenda_appointments
+        WHERE source_attendance_id = $2 AND status = 'confirmed'
+      )
+  `,
+    [new Date().toISOString(), sourceId],
+    client,
+  );
+}
+
+export async function cancelAgendaAppointment(
+  id: string,
+): Promise<AgendaAppointment | null> {
+  return withTransaction(async (client) => {
+    const existing = await lockAgendaAppointment(id, client);
+    if (!existing) return null;
+    const { rows } = await execute<DbAgendaRow>(
+      "UPDATE agenda_appointments SET status = 'cancelled', updated_at = $1 WHERE id = $2 RETURNING *",
+      [new Date().toISOString(), id],
+      client,
+    );
+    if (existing.sourceAttendanceId)
+      await reopenUnbookedReturn(existing.sourceAttendanceId, client);
+    return mapAgendaRow(rows[0]);
+  });
+}
+
+export async function deleteAgendaAppointment(id: string): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const existing = await lockAgendaAppointment(id, client);
+    if (!existing) return false;
+    await execute(
+      'DELETE FROM agenda_appointments WHERE id = $1',
+      [id],
+      client,
+    );
+    if (existing.sourceAttendanceId)
+      await reopenUnbookedReturn(existing.sourceAttendanceId, client);
+    return true;
+  });
 }

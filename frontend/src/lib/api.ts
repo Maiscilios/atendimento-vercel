@@ -5,6 +5,7 @@ import type {
   ReturnOption,
 } from '../../../shared/catalog';
 import type {
+  AgendaAppointment,
   DailyCommissionSummary,
   DailyMetricPoint,
   PanelClientSummary,
@@ -218,6 +219,89 @@ export async function updateDudaReturnStatus(
   return res.attendance;
 }
 
+export interface AgendaAppointmentPayload {
+  clientName: string;
+  whatsapp: string;
+  procedureName: string;
+  appointmentDate: string;
+  appointmentTime: string;
+  notes?: string;
+}
+
+export async function fetchDudaAgenda(params?: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ appointments: AgendaAppointment[] }> {
+  const query = new URLSearchParams();
+  if (params?.startDate) query.set('startDate', params.startDate);
+  if (params?.endDate) query.set('endDate', params.endDate);
+  const qs = query.toString();
+  return apiFetch<{ appointments: AgendaAppointment[] }>(
+    `/api/duda/agenda${qs ? `?${qs}` : ''}`
+  );
+}
+
+export async function createDudaAgendaAppointment(
+  payload: AgendaAppointmentPayload
+): Promise<AgendaAppointment> {
+  const res = await apiFetch<{ appointment: AgendaAppointment }>(
+    '/api/duda/agenda/appointments',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+  return res.appointment;
+}
+
+export async function confirmDudaAgendaRequest(
+  attendanceId: string,
+  payload: {
+    appointmentDate: string;
+    appointmentTime: string;
+    procedureName: string;
+    notes?: string;
+  }
+): Promise<{ appointment: AgendaAppointment; attendance: AttendanceRecord }> {
+  return apiFetch<{ appointment: AgendaAppointment; attendance: AttendanceRecord }>(
+    `/api/duda/agenda/confirm-request/${encodeURIComponent(attendanceId)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function updateDudaAgendaAppointment(
+  id: string,
+  payload: AgendaAppointmentPayload
+): Promise<AgendaAppointment> {
+  const res = await apiFetch<{ appointment: AgendaAppointment }>(
+    `/api/duda/agenda/appointments/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }
+  );
+  return res.appointment;
+}
+
+export async function cancelDudaAgendaAppointment(id: string): Promise<AgendaAppointment> {
+  const res = await apiFetch<{ appointment: AgendaAppointment }>(
+    `/api/duda/agenda/appointments/${encodeURIComponent(id)}/cancel`,
+    {
+      method: 'PATCH',
+    }
+  );
+  return res.appointment;
+}
+
+export async function deleteDudaAgendaAppointment(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/api/duda/agenda/appointments/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
 // ============================================================================
 // LAÍS ADMIN PANEL API
 // ============================================================================
@@ -342,6 +426,80 @@ export async function updateAdminReturnStatus(
 
 export async function deleteAdminAttendance(id: string): Promise<void> {
   await apiFetch<{ ok: boolean }>(`/api/admin/attendances/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function fetchAdminAgenda(params: {
+  professional: Professional;
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ professional: Professional; appointments: AgendaAppointment[] }> {
+  const query = new URLSearchParams({ professional: params.professional });
+  if (params.startDate) query.set('startDate', params.startDate);
+  if (params.endDate) query.set('endDate', params.endDate);
+  return apiFetch<{ professional: Professional; appointments: AgendaAppointment[] }>(
+    `/api/admin/agenda?${query.toString()}`
+  );
+}
+
+export async function createAdminAgendaAppointment(
+  payload: AgendaAppointmentPayload & { professional: Professional }
+): Promise<AgendaAppointment> {
+  const res = await apiFetch<{ appointment: AgendaAppointment }>(
+    '/api/admin/agenda/appointments',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+  return res.appointment;
+}
+
+export async function confirmAdminAgendaRequest(
+  attendanceId: string,
+  payload: {
+    appointmentDate: string;
+    appointmentTime: string;
+    procedureName: string;
+    notes?: string;
+  }
+): Promise<{ appointment: AgendaAppointment; attendance: AttendanceRecord }> {
+  return apiFetch<{ appointment: AgendaAppointment; attendance: AttendanceRecord }>(
+    `/api/admin/agenda/confirm-request/${encodeURIComponent(attendanceId)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function updateAdminAgendaAppointment(
+  id: string,
+  payload: AgendaAppointmentPayload
+): Promise<AgendaAppointment> {
+  const res = await apiFetch<{ appointment: AgendaAppointment }>(
+    `/api/admin/agenda/appointments/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }
+  );
+  return res.appointment;
+}
+
+export async function cancelAdminAgendaAppointment(id: string): Promise<AgendaAppointment> {
+  const res = await apiFetch<{ appointment: AgendaAppointment }>(
+    `/api/admin/agenda/appointments/${encodeURIComponent(id)}/cancel`,
+    {
+      method: 'PATCH',
+    }
+  );
+  return res.appointment;
+}
+
+export async function deleteAdminAgendaAppointment(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/api/admin/agenda/appointments/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
 }

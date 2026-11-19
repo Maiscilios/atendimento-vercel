@@ -1,4 +1,4 @@
-import type { AttendanceRecord, Professional } from './catalog';
+import { getBrazilTodayISO, type AttendanceRecord, type Professional } from './catalog';
 
 export type PayoutStatus = 'pending' | 'paid';
 
@@ -37,4 +37,48 @@ export interface PanelClientSummary {
   lastVisitDate: string;
   professionals: Professional[];
   attendances: AttendanceRecord[];
+}
+
+export function formatDaysSinceLastVisitBR(
+  lastVisitISO: string,
+  brazilTodayISO: string = getBrazilTodayISO()
+): string {
+  const lastParts = lastVisitISO.split('-').map(Number);
+  const todayParts = brazilTodayISO.split('-').map(Number);
+  if (
+    lastParts.length !== 3 ||
+    todayParts.length !== 3 ||
+    lastParts.some((n) => Number.isNaN(n)) ||
+    todayParts.some((n) => Number.isNaN(n))
+  ) {
+    return '';
+  }
+
+  const lastUtc = Date.UTC(lastParts[0], lastParts[1] - 1, lastParts[2]);
+  const todayUtc = Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]);
+  const diffDays = Math.round((todayUtc - lastUtc) / 86_400_000);
+
+  if (diffDays <= 0) return 'Hoje';
+  if (diffDays === 1) return 'Há 1 dia';
+  return `Há ${diffDays} dias`;
+}
+
+export type AgendaAppointmentStatus = 'confirmed' | 'cancelled';
+
+export type AgendaViewMode = 'day' | 'week' | 'month';
+
+export interface AgendaAppointment {
+  id: string;
+  professional: Professional;
+  sourceAttendanceId: string | null;
+  clientName: string;
+  whatsapp: string;
+  whatsappDigits: string;
+  procedureName: string;
+  appointmentDate: string;
+  appointmentTime: string;
+  notes: string;
+  status: AgendaAppointmentStatus;
+  createdAt: string;
+  updatedAt: string;
 }

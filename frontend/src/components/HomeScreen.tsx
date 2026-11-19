@@ -35,19 +35,10 @@ export function HomeScreen({
 
       <main className="flex-1 flex flex-col justify-center px-4 sm:px-8 py-8 sm:py-12">
         <div className="w-full max-w-5xl mx-auto bg-white border border-[#F1D8E2] rounded-3xl p-7 sm:p-12 md:p-16 shadow-[0_6px_28px_rgba(131,24,67,0.05)] flex flex-col justify-center">
-          <div className="text-center space-y-2">
-            <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-[#831843] [text-wrap:balance]">
-              MAIS CÍLIOS
-            </h1>
-            <p className="text-xs sm:text-sm font-medium tracking-[0.22em] text-[#9D2A58]">
-              BELEZA • CUIDADO • AUTOESTIMA
-            </p>
-          </div>
-
-          <div className="mt-8 sm:mt-10 pt-8 sm:pt-10 border-t border-[#F5E4EC] text-center">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-semibold text-[#331824] [text-wrap:balance]">
+          <div className="text-center">
+            <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-[#831843] [text-wrap:balance]">
               Confirme seu atendimento
-            </h2>
+            </h1>
             <p className="mt-2 text-base sm:text-lg text-[#6E4959]">
               Com quem foi realizado seu atendimento?
             </p>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Calendar,
   CalendarClock,
+  CalendarPlus,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -12,12 +13,14 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessageCircle,
   RefreshCw,
   RotateCcw,
   Search,
   Trash2,
   Users,
+  X,
 } from 'lucide-react';
 import {
   DUDA_SERVICES,
@@ -26,6 +29,7 @@ import {
   buildWhatsAppLink,
   formatBRL,
   formatDateBR,
+  getBrazilTodayISO,
   getLocalDateISO,
   getReturnOptionLabel,
   getReturnStatusLabel,
@@ -33,11 +37,11 @@ import {
   type AuthUser,
   type Professional,
 } from '../../../shared/catalog';
-import type {
-  DailyCommissionSummary,
-  DailyMetricPoint,
-  PanelClientSummary,
-  PayoutStatus,
+import {
+  formatDaysSinceLastVisitBR,
+  type DailyCommissionSummary,
+  type PanelClientSummary,
+  type PayoutStatus,
 } from '../../../shared/panelTypes';
 import {
   deleteAdminAttendance,
@@ -48,12 +52,13 @@ import {
   fetchAdminDudaFinance,
   resetDudaPasswordByAdmin,
   updateAdminCommissionStatus,
-  updateAdminReturnStatus,
 } from '../lib/api';
+import { AgendaBookingModal, type AgendaBookingModalState } from './AgendaBookingModal';
+import { AgendaCalendarTab } from './AgendaCalendarTab';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ClientDetailModal } from './ClientDetailModal';
+import { PanelSidebarNav, type SidebarNavItem } from './PanelSidebarNav';
 import { computeRangeForPreset, PeriodFilterBar, type PeriodRange } from './PeriodFilterBar';
-import { ProductionChart } from './ProductionChart';
 
 interface LaisAdminPanelProps {
   user: AuthUser;
@@ -61,18 +66,20 @@ interface LaisAdminPanelProps {
   onLogout: () => void;
 }
 
-type AdminTab = 'home' | 'clients' | 'appointments' | 'history' | 'finance';
+type AdminTab = 'home' | 'clients' | 'appointments' | 'agenda' | 'history' | 'finance';
 
-const TABS: Array<{ id: AdminTab; label: string; icon: typeof LayoutDashboard }> = [
+const TABS: Array<SidebarNavItem<AdminTab>> = [
   { id: 'home', label: 'Início', icon: LayoutDashboard },
   { id: 'clients', label: 'Minhas clientes', icon: Users },
   { id: 'appointments', label: 'Agendamentos', icon: CalendarClock },
+  { id: 'agenda', label: 'Minha agenda', icon: Calendar },
   { id: 'history', label: 'Histórico de atendimentos', icon: History },
   { id: 'finance', label: 'Controle financeiro', icon: DollarSign },
 ];
 
 export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('home');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [confirmResetDuda, setConfirmResetDuda] = useState(false);
   const [resetFeedback, setResetFeedback] = useState('');
@@ -87,7 +94,6 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
   const [dayDudaProduced, setDayDudaProduced] = useState(0);
   const [dayDudaCommission, setDayDudaCommission] = useState(0);
   const [dayAttendances, setDayAttendances] = useState<AttendanceRecord[]>([]);
-  const [dailyChart, setDailyChart] = useState<DailyMetricPoint[]>([]);
 
   // Tab 2: Minhas clientes
   const [clientSearch, setClientSearch] = useState('');
@@ -95,18 +101,24 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
   const [clients, setClients] = useState<PanelClientSummary[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
   const [selectedClient, setSelectedClient] = useState<PanelClientSummary | null>(null);
+  const [brazilToday, setBrazilToday] = useState<string>(() => getBrazilTodayISO());
 
-  // Tab 3: Agendamentos
+  // Tab 3: Agendamentos & Minha agenda
   const [apptProfFilter, setApptProfFilter] = useState<'all' | Professional>('all');
   const [apptStatusFilter, setApptStatusFilter] = useState<'all' | 'waiting' | 'confirmed'>('all');
   const [appointments, setAppointments] = useState<AttendanceRecord[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [agendaBookingState, setAgendaBookingState] = useState<AgendaBookingModalState>({
+    kind: 'closed',
+  });
+  const [agendaFeedback, setAgendaFeedback] = useState('');
+  const [agendaFocusDate, setAgendaFocusDate] = useState<string | undefined>(undefined);
+  const [agendaFocusProfessional, setAgendaFocusProfessional] = useState<Professional>('lais');
 
   // Tab 4: Histórico de atendimentos
   const [histProfFilter, setHistProfFilter] = useState<'all' | Professional>('all');
   const [histServiceFilter, setHistServiceFilter] = useState('all');
-  const [histPeriod, setHistPeriod] = useState<PeriodRange>(() => computeRangeForPreset('all'));
+  const [histDaysAgoInput, setHistDaysAgoInput] = useState('');
   const [histSearch, setHistSearch] = useState('');
   const [historyList, setHistoryList] = useState<AttendanceRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -142,7 +154,6 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
       setDayDudaProduced(data.dayDudaProduced);
       setDayDudaCommission(data.dayDudaCommission);
       setDayAttendances(data.dayAttendances);
-      setDailyChart(data.dailyChart);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar o resumo do dia.');
     } finally {
@@ -180,6 +191,13 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
     }
   }, [apptProfFilter, apptStatusFilter]);
 
+  const parsedHistDaysAgo =
+    histDaysAgoInput.trim() === '' ? null : Number.parseInt(histDaysAgoInput, 10);
+  const histTargetDate =
+    parsedHistDaysAgo !== null && Number.isFinite(parsedHistDaysAgo) && parsedHistDaysAgo >= 0
+      ? addDaysToISO(brazilToday, -parsedHistDaysAgo)
+      : null;
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setError('');
@@ -187,8 +205,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
       const data = await fetchAdminAttendances({
         professional: histProfFilter,
         serviceId: histServiceFilter,
-        startDate: histPeriod.startDate || undefined,
-        endDate: histPeriod.endDate || undefined,
+        startDate: histTargetDate || undefined,
+        endDate: histTargetDate || undefined,
         search: histSearch || undefined,
       });
       setHistoryList(data.attendances);
@@ -197,7 +215,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
     } finally {
       setHistoryLoading(false);
     }
-  }, [histProfFilter, histServiceFilter, histPeriod.startDate, histPeriod.endDate, histSearch]);
+  }, [histProfFilter, histServiceFilter, histTargetDate, histSearch]);
 
   const loadFinance = useCallback(async () => {
     setFinanceLoading(true);
@@ -223,26 +241,20 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
   }, [financeView, commissionDate, financePeriod.startDate, financePeriod.endDate]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      const next = getBrazilTodayISO();
+      setBrazilToday((prev) => (prev === next ? prev : next));
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     if (activeTab === 'home') void loadHome();
     else if (activeTab === 'clients') void loadClients();
     else if (activeTab === 'appointments') void loadAppointments();
     else if (activeTab === 'history') void loadHistory();
-    else void loadFinance();
+    else if (activeTab === 'finance') void loadFinance();
   }, [activeTab, loadHome, loadClients, loadAppointments, loadHistory, loadFinance]);
-
-  async function handleToggleAppointmentStatus(record: AttendanceRecord) {
-    const nextStatus = record.returnStatus === 'confirmed' ? 'waiting' : 'confirmed';
-    setUpdatingId(record.id);
-    setError('');
-    try {
-      const updated = await updateAdminReturnStatus(record.id, nextStatus);
-      setAppointments((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao atualizar agendamento.');
-    } finally {
-      setUpdatingId(null);
-    }
-  }
 
   async function handleDeleteAttendance(id: string) {
     setError('');
@@ -295,7 +307,16 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
     <div className="min-h-screen bg-[#FFF9FB] pb-12">
       <header className="sticky top-0 z-20 border-b border-[#F3DCE6] bg-white/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((open) => !open)}
+              aria-label={sidebarOpen ? 'Fechar menu' : 'Abrir menu'}
+              aria-expanded={sidebarOpen}
+              className="lg:hidden min-h-[42px] min-w-[42px] rounded-xl bg-[#FDF2F6] hover:bg-[#F9E3EC] border border-[#EBC5D5] text-[#831843] flex items-center justify-center shrink-0 transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <span className="font-display text-2xl font-bold text-[#831843] whitespace-nowrap">
               MAIS CÍLIOS
             </span>
@@ -334,85 +355,73 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl font-bold text-[#831843]">
-              Painel Administrativo da Laís
-            </h1>
-            <p className="text-sm text-[#7A5464]">
-              Gestão completa de atendimentos, clientes, agendamentos e controle financeiro
-            </p>
-          </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 flex flex-col lg:flex-row gap-6 items-start">
+        <PanelSidebarNav
+          items={TABS}
+          activeId={activeTab}
+          onSelect={setActiveTab}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          subtitle={`Administração (${user.displayName})`}
+        />
 
-          <div className="flex items-center gap-2">
-            {confirmResetDuda ? (
-              <div className="flex items-center gap-2 bg-white border border-[#EBC5D5] rounded-xl px-3 py-1.5 text-xs">
-                <span className="text-[#4D2939]">Liberar novo cadastro de senha para Duda?</span>
+        <main className="flex-1 min-w-0 w-full space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <h1 className="font-display text-3xl font-bold text-[#831843]">
+                Painel Administrativo da Laís
+              </h1>
+              <p className="text-sm text-[#7A5464]">
+                Gestão completa de atendimentos, clientes, agendamentos e controle financeiro
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {confirmResetDuda ? (
+                <div className="flex items-center gap-2 bg-white border border-[#EBC5D5] rounded-xl px-3 py-1.5 text-xs">
+                  <span className="text-[#4D2939]">Liberar novo cadastro de senha para Duda?</span>
+                  <button
+                    type="button"
+                    onClick={() => void handleResetDudaPassword()}
+                    className="px-2.5 py-1 rounded-lg bg-[#9D2A58] text-white font-semibold"
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmResetDuda(false)}
+                    className="px-2.5 py-1 rounded-lg bg-[#FDF2F6] text-[#6E4959]"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => void handleResetDudaPassword()}
-                  className="px-2.5 py-1 rounded-lg bg-[#9D2A58] text-white font-semibold"
+                  onClick={() => {
+                    setResetFeedback('');
+                    setConfirmResetDuda(true);
+                  }}
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white hover:bg-[#FDF2F6] border border-[#EED2DE] text-xs font-medium text-[#6E4959] inline-flex items-center gap-1.5 transition-colors"
                 >
-                  Confirmar
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Redefinir senha da Duda</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmResetDuda(false)}
-                  className="px-2.5 py-1 rounded-lg bg-[#FDF2F6] text-[#6E4959]"
-                >
-                  Cancelar
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setResetFeedback('');
-                  setConfirmResetDuda(true);
-                }}
-                className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white hover:bg-[#FDF2F6] border border-[#EED2DE] text-xs font-medium text-[#6E4959] inline-flex items-center gap-1.5 transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Redefinir senha da Duda</span>
-              </button>
-            )}
+              )}
+            </div>
           </div>
-        </div>
 
-        <nav className="flex items-center gap-1.5 p-1.5 bg-[#F9ECF2] rounded-2xl overflow-x-auto">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 ${
-                  active
-                    ? 'bg-white text-[#831843] shadow-sm'
-                    : 'text-[#6E4959] hover:text-[#331824]'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+          {resetFeedback && (
+            <div className="p-3.5 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] text-sm text-[#166534]">
+              {resetFeedback}
+            </div>
+          )}
 
-        {resetFeedback && (
-          <div className="p-3.5 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] text-sm text-[#166534]">
-            {resetFeedback}
-          </div>
-        )}
-
-        {error && (
-          <div className="p-3.5 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-sm text-[#9F1239]">
-            {error}
-          </div>
-        )}
+          {error && (
+            <div className="p-3.5 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-sm text-[#9F1239]">
+              {error}
+            </div>
+          )}
 
         {/* 1. INÍCIO */}
         {activeTab === 'home' && (
@@ -526,14 +535,6 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               </div>
             </div>
 
-            <ProductionChart
-              points={dailyChart}
-              selectedDate={homeDate}
-              onSelectDate={setHomeDate}
-              title="Produção total e comissão da Duda (25%) por dia"
-              commissionLabel="Comissão Duda (25%)"
-            />
-
             <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
               <div className="px-5 py-3.5 border-b border-[#F5E4EC] flex items-center justify-between">
                 <h2 className="text-base font-semibold text-[#331824]">
@@ -554,7 +555,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                     Nenhum atendimento registrado em {formatDateBR(homeDate)}
                   </p>
                   <p className="text-sm text-[#7A5464]">
-                    Escolha outra data no calendário ou no gráfico acima.
+                    Escolha outra data no calendário acima.
                   </p>
                 </div>
               ) : (
@@ -693,6 +694,10 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                           <span aria-hidden="true">·</span>
                           <span>Último: {formatDateBR(client.lastVisitDate)}</span>
                           <span aria-hidden="true">·</span>
+                          <span className="font-semibold text-[#831843]">
+                            {formatDaysSinceLastVisitBR(client.lastVisitDate, brazilToday)}
+                          </span>
+                          <span aria-hidden="true">·</span>
                           <span>
                             {client.professionals
                               .map((p) => (p === 'lais' ? 'Laís' : 'Duda'))
@@ -781,6 +786,29 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                 <span>Atualizar</span>
               </button>
             </div>
+
+            {agendaFeedback && (
+              <div className="p-3.5 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] text-sm text-[#166534] flex flex-wrap items-center justify-between gap-3">
+                <span>{agendaFeedback}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('agenda')}
+                    className="px-3 py-1.5 rounded-lg bg-[#15803D] text-white text-xs font-semibold"
+                  >
+                    Ver na Minha agenda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgendaFeedback('')}
+                    aria-label="Fechar aviso"
+                    className="text-[#166534] hover:opacity-75"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
               {appointmentsLoading ? (
@@ -871,22 +899,31 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                             <span>{item.whatsapp}</span>
                           </a>
 
-                          <button
-                            type="button"
-                            disabled={updatingId === item.id}
-                            onClick={() => void handleToggleAppointmentStatus(item)}
-                            className={`min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                              isConfirmed
-                                ? 'bg-[#FFF9FB] hover:bg-[#FDF2F6] text-[#6E4959] border border-[#EBC5D5]'
-                                : 'bg-[#9D2A58] hover:bg-[#831843] text-white'
-                            }`}
-                          >
-                            {updatingId === item.id
-                              ? 'Atualizando...'
-                              : isConfirmed
-                                ? 'Voltar p/ aguardando'
-                                : 'Marcar confirmado'}
-                          </button>
+                          {isConfirmed ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAgendaFocusProfessional(item.professional);
+                                setAgendaFocusDate(item.returnDate || undefined);
+                                setActiveTab('agenda');
+                              }}
+                              className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold bg-[#FDF2F6] hover:bg-[#F9E3EC] text-[#831843] border border-[#EBC5D5] inline-flex items-center gap-1.5 transition-colors"
+                            >
+                              <Calendar className="w-4 h-4" />
+                              <span>Ver na Minha agenda</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAgendaBookingState({ kind: 'confirm-request', request: item })
+                              }
+                              className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold bg-[#9D2A58] hover:bg-[#831843] text-white inline-flex items-center gap-1.5 transition-colors"
+                            >
+                              <CalendarPlus className="w-4 h-4" />
+                              <span>Adicionar à agenda</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -895,6 +932,15 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               )}
             </div>
           </div>
+        )}
+
+        {/* MINHA AGENDA (LAÍS E DUDA PARA A ADMINISTRADORA) */}
+        {activeTab === 'agenda' && (
+          <AgendaCalendarTab
+            isAdmin={true}
+            initialDate={agendaFocusDate}
+            initialProfessional={agendaFocusProfessional}
+          />
         )}
 
         {/* 4. HISTÓRICO DE ATENDIMENTOS */}
@@ -949,7 +995,45 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               </div>
 
               <div className="pt-2 border-t border-[#F5E4EC] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                <PeriodFilterBar value={histPeriod} onChange={setHistPeriod} />
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex flex-wrap items-center gap-2.5 text-sm font-medium text-[#4D2939]">
+                    <span>Consultar há quantos dias?</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={histDaysAgoInput}
+                      onChange={(e) => setHistDaysAgoInput(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Ex: 1, 5, 15, 30"
+                      className="w-36 min-h-[40px] px-3 py-1.5 text-sm font-semibold bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] tabular-nums placeholder:font-normal placeholder:text-[#B18E9C] focus:outline-none focus:border-[#9D2A58]"
+                    />
+                  </label>
+
+                  {histTargetDate !== null && parsedHistDaysAgo !== null ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs sm:text-sm font-semibold text-[#831843] tabular-nums">
+                        Data: {formatDateBR(histTargetDate)}{' '}
+                        {parsedHistDaysAgo === 0
+                          ? '(Hoje)'
+                          : parsedHistDaysAgo === 1
+                            ? '(Ontem · há 1 dia)'
+                            : `(Há ${parsedHistDaysAgo} dias)`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setHistDaysAgoInput('')}
+                        className="min-h-[36px] px-3 py-1 text-xs font-semibold text-[#6E4959] bg-[#F9ECF2] hover:bg-[#F3DCE6] rounded-lg transition-colors"
+                      >
+                        Todo período
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-[#7A5464]">
+                      Exibindo todos os dias (horário de Brasília)
+                    </span>
+                  )}
+                </div>
+
                 <button
                   type="button"
                   onClick={() => void loadHistory()}
@@ -1369,7 +1453,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             )}
           </div>
         )}
-      </main>
+        </main>
+      </div>
 
       <ClientDetailModal
         client={selectedClient}
@@ -1381,6 +1466,30 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         isOpen={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
         userName={user.displayName}
+      />
+
+      <AgendaBookingModal
+        state={agendaBookingState}
+        isAdmin={true}
+        onClose={() => setAgendaBookingState({ kind: 'closed' })}
+        onSaved={({ appointment, updatedAttendance, message }) => {
+          setAgendaBookingState({ kind: 'closed' });
+          setAgendaFocusProfessional(appointment.professional);
+          setAgendaFocusDate(appointment.appointmentDate);
+          setAgendaFeedback(message);
+          if (updatedAttendance) {
+            setAppointments((prev) => {
+              const next = prev.map((item) =>
+                item.id === updatedAttendance.id ? updatedAttendance : item
+              );
+              return apptStatusFilter === 'waiting'
+                ? next.filter((item) => item.returnStatus === 'waiting')
+                : next;
+            });
+          } else {
+            void loadAppointments();
+          }
+        }}
       />
     </div>
   );

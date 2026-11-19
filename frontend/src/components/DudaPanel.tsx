@@ -2,48 +2,51 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Calendar,
   CalendarClock,
+  CalendarPlus,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
   DollarSign,
-  History,
   Home,
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessageCircle,
   RefreshCw,
   Search,
   Users,
+  X,
 } from 'lucide-react';
 import {
   addDaysToISO,
   buildWhatsAppLink,
   formatBRL,
   formatDateBR,
+  getBrazilTodayISO,
   getLocalDateISO,
   getReturnOptionLabel,
   getReturnStatusLabel,
   type AttendanceRecord,
   type AuthUser,
 } from '../../../shared/catalog';
-import type {
-  DailyCommissionSummary,
-  DailyMetricPoint,
-  PanelClientSummary,
+import {
+  formatDaysSinceLastVisitBR,
+  type DailyCommissionSummary,
+  type PanelClientSummary,
 } from '../../../shared/panelTypes';
 import {
   fetchDudaAttendances,
   fetchDudaClients,
   fetchDudaCommissions,
   fetchDudaDashboard,
-  updateDudaReturnStatus,
 } from '../lib/api';
+import { AgendaBookingModal, type AgendaBookingModalState } from './AgendaBookingModal';
+import { AgendaCalendarTab } from './AgendaCalendarTab';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ClientDetailModal } from './ClientDetailModal';
-import { computeRangeForPreset, PeriodFilterBar, type PeriodRange } from './PeriodFilterBar';
-import { ProductionChart } from './ProductionChart';
+import { PanelSidebarNav, type SidebarNavItem } from './PanelSidebarNav';
 
 interface DudaPanelProps {
   user: AuthUser;
@@ -51,18 +54,19 @@ interface DudaPanelProps {
   onLogout: () => void;
 }
 
-type DudaTab = 'home' | 'clients' | 'appointments' | 'history' | 'commissions';
+type DudaTab = 'home' | 'clients' | 'appointments' | 'agenda' | 'commissions';
 
-const TABS: Array<{ id: DudaTab; label: string; icon: typeof LayoutDashboard }> = [
+const TABS: Array<SidebarNavItem<DudaTab>> = [
   { id: 'home', label: 'Início', icon: LayoutDashboard },
   { id: 'clients', label: 'Minhas clientes', icon: Users },
   { id: 'appointments', label: 'Agendamentos', icon: CalendarClock },
-  { id: 'history', label: 'Histórico de atendimentos', icon: History },
+  { id: 'agenda', label: 'Minha agenda', icon: Calendar },
   { id: 'commissions', label: 'Minhas comissões', icon: DollarSign },
 ];
 
 export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
   const [activeTab, setActiveTab] = useState<DudaTab>('home');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [error, setError] = useState('');
 
@@ -72,27 +76,25 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
   const [dayTotalProduced, setDayTotalProduced] = useState(0);
   const [dayCommissionToLais, setDayCommissionToLais] = useState(0);
   const [dayAttendances, setDayAttendances] = useState<AttendanceRecord[]>([]);
-  const [dailyChart, setDailyChart] = useState<DailyMetricPoint[]>([]);
 
   // Tab 2: Minhas clientes
   const [clientSearch, setClientSearch] = useState('');
   const [clients, setClients] = useState<PanelClientSummary[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
   const [selectedClient, setSelectedClient] = useState<PanelClientSummary | null>(null);
+  const [brazilToday, setBrazilToday] = useState<string>(() => getBrazilTodayISO());
 
-  // Tab 3: Agendamentos
+  // Tab 3: Agendamentos & Minha agenda
   const [statusFilter, setStatusFilter] = useState<'all' | 'waiting' | 'confirmed'>('all');
   const [appointments, setAppointments] = useState<AttendanceRecord[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [agendaBookingState, setAgendaBookingState] = useState<AgendaBookingModalState>({
+    kind: 'closed',
+  });
+  const [agendaFeedback, setAgendaFeedback] = useState('');
+  const [agendaFocusDate, setAgendaFocusDate] = useState<string | undefined>(undefined);
 
-  // Tab 4: Histórico de atendimentos
-  const [historyPeriod, setHistoryPeriod] = useState<PeriodRange>(() => computeRangeForPreset('all'));
-  const [historySearch, setHistorySearch] = useState('');
-  const [historyList, setHistoryList] = useState<AttendanceRecord[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-
-  // Tab 5: Minhas comissões (consulta dia a dia, sem saldo geral acumulado)
+  // Tab 4: Minhas comissões (consulta dia a dia, sem saldo geral acumulado)
   const [commissionDate, setCommissionDate] = useState<string>(() => getLocalDateISO());
   const [selectedCommissionDay, setSelectedCommissionDay] =
     useState<DailyCommissionSummary | null>(null);
@@ -109,7 +111,6 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
       setDayTotalProduced(data.dayTotalProduced);
       setDayCommissionToLais(data.dayCommissionToLais);
       setDayAttendances(data.dayAttendances);
-      setDailyChart(data.dailyChart);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar o resumo do dia.');
     } finally {
@@ -146,23 +147,6 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
     }
   }, [statusFilter]);
 
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    setError('');
-    try {
-      const data = await fetchDudaAttendances({
-        startDate: historyPeriod.startDate || undefined,
-        endDate: historyPeriod.endDate || undefined,
-        search: historySearch || undefined,
-      });
-      setHistoryList(data.attendances);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar histórico.');
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [historyPeriod.startDate, historyPeriod.endDate, historySearch]);
-
   const loadCommissions = useCallback(async () => {
     setCommissionsLoading(true);
     setError('');
@@ -178,32 +162,34 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
   }, [commissionDate]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      const next = getBrazilTodayISO();
+      setBrazilToday((prev) => (prev === next ? prev : next));
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     if (activeTab === 'home') void loadHome();
     else if (activeTab === 'clients') void loadClients();
     else if (activeTab === 'appointments') void loadAppointments();
-    else if (activeTab === 'history') void loadHistory();
-    else void loadCommissions();
-  }, [activeTab, loadHome, loadClients, loadAppointments, loadHistory, loadCommissions]);
-
-  async function handleToggleAppointmentStatus(record: AttendanceRecord) {
-    const nextStatus = record.returnStatus === 'confirmed' ? 'waiting' : 'confirmed';
-    setUpdatingId(record.id);
-    setError('');
-    try {
-      const updated = await updateDudaReturnStatus(record.id, nextStatus);
-      setAppointments((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao atualizar agendamento.');
-    } finally {
-      setUpdatingId(null);
-    }
-  }
+    else if (activeTab === 'commissions') void loadCommissions();
+  }, [activeTab, loadHome, loadClients, loadAppointments, loadCommissions]);
 
   return (
     <div className="min-h-screen bg-[#FFF9FB] pb-12">
       <header className="sticky top-0 z-20 border-b border-[#F3DCE6] bg-white/95 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((open) => !open)}
+              aria-label={sidebarOpen ? 'Fechar menu' : 'Abrir menu'}
+              aria-expanded={sidebarOpen}
+              className="lg:hidden min-h-[42px] min-w-[42px] rounded-xl bg-[#FDF2F6] hover:bg-[#F9E3EC] border border-[#EBC5D5] text-[#831843] flex items-center justify-center shrink-0 transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <span className="font-display text-2xl font-bold text-[#831843] whitespace-nowrap">
               MAIS CÍLIOS
             </span>
@@ -242,8 +228,17 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
-        <div className="space-y-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 flex flex-col lg:flex-row gap-6 items-start">
+        <PanelSidebarNav
+          items={TABS}
+          activeId={activeTab}
+          onSelect={setActiveTab}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          subtitle={`Painel da ${user.displayName}`}
+        />
+
+        <main className="flex-1 min-w-0 w-full space-y-6">
           <div>
             <h1 className="font-display text-3xl font-bold text-[#831843]">
               Painel da Duda
@@ -253,34 +248,11 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
             </p>
           </div>
 
-          <nav className="flex items-center gap-1.5 p-1.5 bg-[#F9ECF2] rounded-2xl overflow-x-auto">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 ${
-                    active
-                      ? 'bg-white text-[#831843] shadow-sm'
-                      : 'text-[#6E4959] hover:text-[#331824]'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        {error && (
-          <div className="p-3.5 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-sm text-[#9F1239]">
-            {error}
-          </div>
-        )}
+          {error && (
+            <div className="p-3.5 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-sm text-[#9F1239]">
+              {error}
+            </div>
+          )}
 
         {/* 1. INÍCIO */}
         {activeTab === 'home' && (
@@ -354,14 +326,6 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
               </div>
             </div>
 
-            <ProductionChart
-              points={dailyChart}
-              selectedDate={homeDate}
-              onSelectDate={setHomeDate}
-              title="Produção e comissão (25%) por dia"
-              commissionLabel="Comissão Laís (25%)"
-            />
-
             <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
               <div className="px-5 py-3.5 border-b border-[#F5E4EC] flex items-center justify-between">
                 <h2 className="text-base font-semibold text-[#331824]">
@@ -382,7 +346,7 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                     Nenhum atendimento seu registrado em {formatDateBR(homeDate)}
                   </p>
                   <p className="text-sm text-[#7A5464]">
-                    Selecione outra data no calendário ou no gráfico acima.
+                    Selecione outra data no calendário acima.
                   </p>
                 </div>
               ) : (
@@ -483,7 +447,11 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                             {client.totalVisits === 1 ? 'atendimento' : 'atendimentos'}
                           </span>
                           <span aria-hidden="true">·</span>
-                          <span>Último em {formatDateBR(client.lastVisitDate)}</span>
+                          <span>Último: {formatDateBR(client.lastVisitDate)}</span>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-semibold text-[#831843]">
+                            {formatDaysSinceLastVisitBR(client.lastVisitDate, brazilToday)}
+                          </span>
                           <span aria-hidden="true">·</span>
                           <span>Toque no nome para ver cadastro</span>
                         </div>
@@ -542,6 +510,29 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                 <span>Atualizar</span>
               </button>
             </div>
+
+            {agendaFeedback && (
+              <div className="p-3.5 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] text-sm text-[#166534] flex flex-wrap items-center justify-between gap-3">
+                <span>{agendaFeedback}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('agenda')}
+                    className="px-3 py-1.5 rounded-lg bg-[#15803D] text-white text-xs font-semibold"
+                  >
+                    Ver na Minha agenda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgendaFeedback('')}
+                    aria-label="Fechar aviso"
+                    className="text-[#166534] hover:opacity-75"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
               {appointmentsLoading ? (
@@ -625,22 +616,30 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                             <span>{item.whatsapp}</span>
                           </a>
 
-                          <button
-                            type="button"
-                            disabled={updatingId === item.id}
-                            onClick={() => void handleToggleAppointmentStatus(item)}
-                            className={`min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                              isConfirmed
-                                ? 'bg-[#FFF9FB] hover:bg-[#FDF2F6] text-[#6E4959] border border-[#EBC5D5]'
-                                : 'bg-[#9D2A58] hover:bg-[#831843] text-white'
-                            }`}
-                          >
-                            {updatingId === item.id
-                              ? 'Atualizando...'
-                              : isConfirmed
-                                ? 'Voltar p/ aguardando'
-                                : 'Marcar confirmado'}
-                          </button>
+                          {isConfirmed ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAgendaFocusDate(item.returnDate || undefined);
+                                setActiveTab('agenda');
+                              }}
+                              className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold bg-[#FDF2F6] hover:bg-[#F9E3EC] text-[#831843] border border-[#EBC5D5] inline-flex items-center gap-1.5 transition-colors"
+                            >
+                              <Calendar className="w-4 h-4" />
+                              <span>Ver na Minha agenda</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAgendaBookingState({ kind: 'confirm-request', request: item })
+                              }
+                              className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold bg-[#9D2A58] hover:bg-[#831843] text-white inline-flex items-center gap-1.5 transition-colors"
+                            >
+                              <CalendarPlus className="w-4 h-4" />
+                              <span>Adicionar à agenda</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -651,108 +650,12 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
           </div>
         )}
 
-        {/* 4. HISTÓRICO DE ATENDIMENTOS */}
-        {activeTab === 'history' && (
-          <div className="space-y-5">
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 text-[#9D2A58] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={historySearch}
-                    onChange={(e) => setHistorySearch(e.target.value)}
-                    placeholder="Buscar por cliente ou telefone..."
-                    className="w-full min-h-[42px] pl-10 pr-3 py-2 text-sm bg-[#FFF9FB] border border-[#EED2DE] rounded-xl text-[#331824] focus:outline-none focus:border-[#9D2A58]"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void loadHistory()}
-                  className="min-h-[40px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#831843] bg-[#FDF2F6] hover:bg-[#F9E3EC] rounded-xl transition-colors self-start sm:self-auto"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${historyLoading ? 'animate-spin' : ''}`} />
-                  <span>Atualizar</span>
-                </button>
-              </div>
-              <div className="pt-2 border-t border-[#F5E4EC]">
-                <PeriodFilterBar value={historyPeriod} onChange={setHistoryPeriod} />
-              </div>
-            </div>
-
-            <div className="bg-white border border-[#F1D8E2] rounded-2xl overflow-hidden">
-              {historyLoading ? (
-                <div className="p-8 text-center text-sm text-[#7A5464]">
-                  Carregando histórico...
-                </div>
-              ) : historyList.length === 0 ? (
-                <div className="p-8 text-center space-y-1.5">
-                  <p className="text-base font-medium text-[#331824]">
-                    Nenhum atendimento encontrado neste período
-                  </p>
-                  <p className="text-sm text-[#7A5464]">
-                    Ajuste o filtro de data ou termo de busca acima.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-[#F5E4EC]">
-                  {historyList.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#FFF9FB]"
-                    >
-                      <div className="space-y-1.5 min-w-0">
-                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                          <h3 className="text-base font-semibold text-[#331824]">
-                            {item.clientName}
-                          </h3>
-                          <span className="text-xs text-[#7A5464] tabular-nums">
-                            {formatDateBR(item.serviceDate)}
-                          </span>
-                        </div>
-                        <p className="text-sm text-[#5E3A4A]">
-                          {item.services.map((s) => s.name).join(' · ')}
-                          {item.additionals.length > 0 && (
-                            <span className="text-xs text-[#831843]">
-                              {' '}
-                              · Adicionais: {item.additionals.join(', ')}
-                            </span>
-                          )}
-                        </p>
-                        <a
-                          href={buildWhatsAppLink(item.whatsapp)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#15803D] hover:underline tabular-nums"
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                          <span>{item.whatsapp}</span>
-                        </a>
-                      </div>
-
-                      <div className="flex items-center gap-6 md:text-right shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-[#F5E4EC]">
-                        <div>
-                          <span className="block text-xs text-[#7A5464]">Valor recebido</span>
-                          <span className="text-base font-bold text-[#331824] tabular-nums">
-                            {formatBRL(item.totalPaid)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="block text-xs text-[#831843]">Comissão (25%)</span>
-                          <span className="text-base font-bold text-[#831843] tabular-nums">
-                            {formatBRL(item.commissionAmount)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+        {/* MINHA AGENDA (EXCLUSIVA DA DUDA) */}
+        {activeTab === 'agenda' && (
+          <AgendaCalendarTab isAdmin={false} initialDate={agendaFocusDate} />
         )}
 
-        {/* 5. MINHAS COMISSÕES (POR DIA SEPARADAMENTE — SEM SALDO GERAL ACUMULADO) */}
+        {/* 4. MINHAS COMISSÕES (POR DIA SEPARADAMENTE — SEM SALDO GERAL ACUMULADO) */}
         {activeTab === 'commissions' && (
           <div className="space-y-5">
             <div className="bg-white border border-[#F1D8E2] rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
@@ -952,7 +855,8 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
             </div>
           </div>
         )}
-      </main>
+        </main>
+      </div>
 
       <ClientDetailModal
         client={selectedClient}
@@ -963,6 +867,29 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
         isOpen={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
         userName={user.displayName}
+      />
+
+      <AgendaBookingModal
+        state={agendaBookingState}
+        isAdmin={false}
+        onClose={() => setAgendaBookingState({ kind: 'closed' })}
+        onSaved={({ appointment, updatedAttendance, message }) => {
+          setAgendaBookingState({ kind: 'closed' });
+          setAgendaFocusDate(appointment.appointmentDate);
+          setAgendaFeedback(message);
+          if (updatedAttendance) {
+            setAppointments((prev) => {
+              const next = prev.map((item) =>
+                item.id === updatedAttendance.id ? updatedAttendance : item
+              );
+              return statusFilter === 'waiting'
+                ? next.filter((item) => item.returnStatus === 'waiting')
+                : next;
+            });
+          } else {
+            void loadAppointments();
+          }
+        }}
       />
     </div>
   );

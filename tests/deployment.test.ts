@@ -78,6 +78,8 @@ test(
     let laisToken = '';
     let dudaToken = '';
     let dudaAttendanceId = '';
+    let laisAttendanceId = '';
+    let linkedAgendaId = '';
     const date = '2026-11-19';
 
     await t.test(
@@ -221,6 +223,7 @@ test(
           assert.equal(response.data.confirmation.returnDate, '2026-12-04');
           if (professional === 'duda')
             dudaAttendanceId = response.data.confirmation.id;
+          else laisAttendanceId = response.data.confirmation.id;
         }
         const duda = await request(
           `/api/duda/dashboard?date=${date}`,
@@ -303,10 +306,479 @@ test(
       },
     );
 
+    const agendaDate = '2026-12-04';
+    const manualPayload = {
+      clientName: 'Cliente da agenda',
+      whatsapp: '11999998888',
+      procedureName: 'Manutenção',
+      appointmentDate: agendaDate,
+      appointmentTime: '14:30',
+      notes: 'Agendamento manual',
+    };
+    let manualDudaId = '';
+    let manualLaisId = '';
+
+    await t.test(
+      'agenda exige login e restringe rotas administrativas',
+      async () => {
+        for (const [method, endpoint] of [
+          ['GET', '/api/duda/agenda'],
+          ['POST', '/api/duda/agenda/appointments'],
+          ['POST', `/api/duda/agenda/confirm-request/${dudaAttendanceId}`],
+          ['PATCH', '/api/duda/agenda/appointments/unknown'],
+          ['PATCH', '/api/duda/agenda/appointments/unknown/cancel'],
+          ['DELETE', '/api/duda/agenda/appointments/unknown'],
+        ])
+          assert.equal((await request(endpoint, method)).status, 401);
+        for (const [method, endpoint] of [
+          ['GET', '/api/admin/agenda'],
+          ['POST', '/api/admin/agenda/appointments'],
+          ['POST', `/api/admin/agenda/confirm-request/${dudaAttendanceId}`],
+          ['PATCH', '/api/admin/agenda/appointments/unknown'],
+          ['PATCH', '/api/admin/agenda/appointments/unknown/cancel'],
+          ['DELETE', '/api/admin/agenda/appointments/unknown'],
+        ])
+          assert.equal(
+            (
+              await request(
+                endpoint,
+                method,
+                method === 'GET' ? undefined : manualPayload,
+                dudaToken,
+              )
+            ).status,
+            403,
+          );
+      },
+    );
+
+    await t.test(
+      'cria agendas separadas, valida horário e filtra o calendário',
+      async () => {
+        assert.equal(
+          (
+            await request(
+              '/api/duda/agenda/appointments',
+              'POST',
+              { ...manualPayload, appointmentTime: '25:00' },
+              dudaToken,
+            )
+          ).status,
+          400,
+        );
+        const duda = await request(
+          '/api/duda/agenda/appointments',
+          'POST',
+          { ...manualPayload, professional: 'lais' },
+          dudaToken,
+        );
+        assert.equal(duda.status, 201, JSON.stringify(duda.data));
+        manualDudaId = duda.data.appointment.id;
+        assert.equal(duda.data.appointment.professional, 'duda');
+        const lais = await request(
+          '/api/admin/agenda/appointments',
+          'POST',
+          { ...manualPayload, professional: 'lais' },
+          laisToken,
+        );
+        assert.equal(lais.status, 201, JSON.stringify(lais.data));
+        manualLaisId = lais.data.appointment.id;
+        assert.equal(lais.data.appointment.professional, 'lais');
+        assert.equal(
+          (
+            await request(
+              '/api/duda/agenda/appointments',
+              'POST',
+              manualPayload,
+              dudaToken,
+            )
+          ).status,
+          409,
+        );
+        const own = await request(
+          `/api/duda/agenda?professional=lais&startDate=${agendaDate}&endDate=${agendaDate}`,
+          'GET',
+          undefined,
+          dudaToken,
+        );
+        assert.equal(own.data.appointments.length, 1);
+        assert.equal(own.data.appointments[0].id, manualDudaId);
+        const outside = await request(
+          '/api/duda/agenda?startDate=2026-12-05&endDate=2026-12-06',
+          'GET',
+          undefined,
+          dudaToken,
+        );
+        assert.deepEqual(outside.data.appointments, []);
+        for (const [method, suffix] of [
+          ['PATCH', ''],
+          ['PATCH', '/cancel'],
+          ['DELETE', ''],
+        ]) {
+          assert.equal(
+            (
+              await request(
+                `/api/duda/agenda/appointments/${manualLaisId}${suffix}`,
+                method,
+                manualPayload,
+                dudaToken,
+              )
+            ).status,
+            404,
+          );
+        }
+      },
+    );
+
+    await t.test(
+      'edita e remarca agendas sem permitir dois horários iguais',
+      async () => {
+        const other = await request(
+          '/api/duda/agenda/appointments',
+          'POST',
+          {
+            ...manualPayload,
+            clientName: 'Cliente de apoio',
+            appointmentTime: '15:30',
+          },
+          dudaToken,
+        );
+        assert.equal(other.status, 201);
+        const conflict = await request(
+          `/api/duda/agenda/appointments/${manualDudaId}`,
+          'PATCH',
+          { ...manualPayload, appointmentTime: '15:30' },
+          dudaToken,
+        );
+        assert.equal(conflict.status, 409);
+        const updated = await request(
+          `/api/duda/agenda/appointments/${manualDudaId}`,
+          'PATCH',
+          { ...manualPayload, appointmentTime: '15:00', notes: 'Remarcado' },
+          dudaToken,
+        );
+        assert.equal(updated.status, 200, JSON.stringify(updated.data));
+        assert.equal(updated.data.appointment.appointmentTime, '15:00');
+        const adminEdit = await request(
+          `/api/admin/agenda/appointments/${manualDudaId}`,
+          'PATCH',
+          { ...manualPayload, appointmentTime: '14:45' },
+          laisToken,
+        );
+        assert.equal(adminEdit.status, 200);
+        assert.equal(adminEdit.data.appointment.professional, 'duda');
+        assert.equal(adminEdit.data.appointment.appointmentTime, '14:45');
+      },
+    );
+
+    await t.test(
+      'reserva um único horário em requisições concorrentes',
+      async () => {
+        const payload = { ...manualPayload, appointmentTime: '16:00' };
+        const responses = await Promise.all([
+          request('/api/duda/agenda/appointments', 'POST', payload, dudaToken),
+          request(
+            '/api/admin/agenda/appointments',
+            'POST',
+            { ...payload, professional: 'duda' },
+            laisToken,
+          ),
+        ]);
+        assert.deepEqual(responses.map((r) => r.status).sort(), [201, 409]);
+        const calendar = await request(
+          `/api/admin/agenda?professional=duda&startDate=${agendaDate}&endDate=${agendaDate}`,
+          'GET',
+          undefined,
+          laisToken,
+        );
+        assert.equal(
+          calendar.data.appointments.filter(
+            (a: { appointmentTime: string }) => a.appointmentTime === '16:00',
+          ).length,
+          1,
+        );
+      },
+    );
+
+    await t.test(
+      'cancelar libera o horário e excluir não remove outra reserva',
+      async () => {
+        const cancelled = await request(
+          `/api/admin/agenda/appointments/${manualDudaId}/cancel`,
+          'PATCH',
+          undefined,
+          laisToken,
+        );
+        assert.equal(cancelled.status, 200);
+        assert.equal(cancelled.data.appointment.status, 'cancelled');
+        const replacement = await request(
+          '/api/duda/agenda/appointments',
+          'POST',
+          { ...manualPayload, appointmentTime: '14:45' },
+          dudaToken,
+        );
+        assert.equal(replacement.status, 201);
+        assert.equal(
+          (
+            await request(
+              `/api/duda/agenda/appointments/${manualDudaId}`,
+              'PATCH',
+              manualPayload,
+              dudaToken,
+            )
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await request(
+              `/api/duda/agenda/appointments/${manualDudaId}`,
+              'DELETE',
+              undefined,
+              dudaToken,
+            )
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await request(
+              `/api/admin/agenda/appointments/${manualLaisId}`,
+              'DELETE',
+              undefined,
+              laisToken,
+            )
+          ).status,
+          200,
+        );
+        const calendar = await request(
+          '/api/duda/agenda',
+          'GET',
+          undefined,
+          dudaToken,
+        );
+        assert.ok(
+          calendar.data.appointments.some(
+            (a: { id: string }) => a.id === replacement.data.appointment.id,
+          ),
+        );
+      },
+    );
+
+    await t.test(
+      'confirma retorno e faz rollback se o horário estiver ocupado',
+      async () => {
+        const payload = {
+          appointmentDate: agendaDate,
+          appointmentTime: '15:30',
+          procedureName: 'Manutenção',
+          notes: 'Retorno',
+        };
+        assert.equal(
+          (
+            await request(
+              `/api/duda/agenda/confirm-request/${laisAttendanceId}`,
+              'POST',
+              payload,
+              dudaToken,
+            )
+          ).status,
+          403,
+        );
+        await request(
+          `/api/duda/attendances/${dudaAttendanceId}/return-status`,
+          'PATCH',
+          { status: 'waiting' },
+          dudaToken,
+        );
+        assert.equal(
+          (
+            await request(
+              `/api/duda/agenda/confirm-request/${dudaAttendanceId}`,
+              'POST',
+              payload,
+              dudaToken,
+            )
+          ).status,
+          409,
+        );
+        const waiting = await request(
+          '/api/duda/attendances',
+          'GET',
+          undefined,
+          dudaToken,
+        );
+        assert.equal(
+          waiting.data.attendances.find(
+            (a: { id: string }) => a.id === dudaAttendanceId,
+          ).returnStatus,
+          'waiting',
+        );
+        const responses = await Promise.all([
+          request(
+            `/api/duda/agenda/confirm-request/${dudaAttendanceId}`,
+            'POST',
+            { ...payload, appointmentTime: '11:45' },
+            dudaToken,
+          ),
+          request(
+            `/api/duda/agenda/confirm-request/${dudaAttendanceId}`,
+            'POST',
+            { ...payload, appointmentTime: '11:45' },
+            dudaToken,
+          ),
+        ]);
+        assert.deepEqual(responses.map((r) => r.status).sort(), [201, 409]);
+        const confirmed = responses.find((r) => r.status === 201)!;
+        assert.equal(
+          confirmed.data.appointment.sourceAttendanceId,
+          dudaAttendanceId,
+        );
+        assert.equal(confirmed.data.attendance.returnStatus, 'confirmed');
+        linkedAgendaId = confirmed.data.appointment.id;
+      },
+    );
+
+    await t.test(
+      'reabre retorno ao cancelar e preserva a confirmação após reagendar',
+      async () => {
+        const cancelledId = linkedAgendaId;
+        assert.equal(
+          (
+            await request(
+              `/api/duda/agenda/appointments/${cancelledId}/cancel`,
+              'PATCH',
+              undefined,
+              dudaToken,
+            )
+          ).status,
+          200,
+        );
+        const pending = await request(
+          '/api/duda/attendances',
+          'GET',
+          undefined,
+          dudaToken,
+        );
+        assert.equal(
+          pending.data.attendances.find(
+            (a: { id: string }) => a.id === dudaAttendanceId,
+          ).returnStatus,
+          'waiting',
+        );
+        const payload = {
+          appointmentDate: agendaDate,
+          appointmentTime: '12:15',
+          procedureName: 'Manutenção',
+        };
+        const rebooked = await request(
+          `/api/admin/agenda/confirm-request/${dudaAttendanceId}`,
+          'POST',
+          payload,
+          laisToken,
+        );
+        assert.equal(rebooked.status, 201, JSON.stringify(rebooked.data));
+        linkedAgendaId = rebooked.data.appointment.id;
+        assert.equal(
+          (
+            await request(
+              `/api/duda/agenda/appointments/${cancelledId}`,
+              'DELETE',
+              undefined,
+              dudaToken,
+            )
+          ).status,
+          200,
+        );
+        const stillConfirmed = await request(
+          '/api/duda/attendances',
+          'GET',
+          undefined,
+          dudaToken,
+        );
+        assert.equal(
+          stillConfirmed.data.attendances.find(
+            (a: { id: string }) => a.id === dudaAttendanceId,
+          ).returnStatus,
+          'confirmed',
+        );
+        assert.equal(
+          (
+            await request(
+              `/api/admin/agenda/appointments/${linkedAgendaId}`,
+              'DELETE',
+              undefined,
+              laisToken,
+            )
+          ).status,
+          200,
+        );
+        const reopened = await request(
+          '/api/duda/attendances',
+          'GET',
+          undefined,
+          dudaToken,
+        );
+        assert.equal(
+          reopened.data.attendances.find(
+            (a: { id: string }) => a.id === dudaAttendanceId,
+          ).returnStatus,
+          'waiting',
+        );
+        const finalBooking = await request(
+          `/api/duda/agenda/confirm-request/${dudaAttendanceId}`,
+          'POST',
+          payload,
+          dudaToken,
+        );
+        assert.equal(finalBooking.status, 201);
+        linkedAgendaId = finalBooking.data.appointment.id;
+      },
+    );
+
+    await t.test(
+      'administradora confirma e cancela retornos das duas profissionais',
+      async () => {
+        const payload = {
+          appointmentDate: agendaDate,
+          appointmentTime: '12:15',
+          procedureName: 'Henna',
+        };
+        const confirmed = await request(
+          `/api/admin/agenda/confirm-request/${laisAttendanceId}`,
+          'POST',
+          payload,
+          laisToken,
+        );
+        assert.equal(confirmed.status, 201);
+        assert.equal(confirmed.data.appointment.professional, 'lais');
+        const id = confirmed.data.appointment.id;
+        const cancelled = await request(
+          `/api/admin/agenda/appointments/${id}/cancel`,
+          'PATCH',
+          undefined,
+          laisToken,
+        );
+        assert.equal(cancelled.status, 200);
+        assert.equal(cancelled.data.appointment.status, 'cancelled');
+        assert.equal(
+          (
+            await request(
+              `/api/admin/agenda/appointments/${id}`,
+              'DELETE',
+              undefined,
+              laisToken,
+            )
+          ).status,
+          200,
+        );
+      },
+    );
+
     await t.test(
       'outro processo lê os mesmos atendimentos, senhas e sessões',
-      () => {
-        const result = spawnSync(
+      async () => {
+        const result = await execFileAsync(
           process.execPath,
           [
             '--import',
@@ -328,7 +800,6 @@ test(
             encoding: 'utf8',
           },
         );
-        assert.equal(result.status, 0, result.stderr);
         assert.deepEqual(JSON.parse(result.stdout), { count: 2, user: 'lais' });
       },
     );
@@ -399,6 +870,17 @@ test(
           ).status,
           200,
         );
+        const preservedAgenda = await request(
+          '/api/admin/agenda?professional=duda',
+          'GET',
+          undefined,
+          laisToken,
+        );
+        const preservedBooking = preservedAgenda.data.appointments.find(
+          (a: { id: string }) => a.id === linkedAgendaId,
+        );
+        assert.ok(preservedBooking);
+        assert.equal(preservedBooking.sourceAttendanceId, null);
         assert.equal(
           (await request('/api/auth/logout', 'POST', {}, laisToken)).status,
           200,
