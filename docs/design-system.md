@@ -4,17 +4,18 @@ A paleta está centralizada no bloco `@theme` de `frontend/src/index.css`, usand
 
 | Token | Cor | Uso |
 | --- | --- | --- |
-| `brand` | `#C084C6` | Ícones decorativos, detalhes de cards e bordas de seleção |
-| `brand-strong` | `#78367E` | Ações principais, títulos e valores importantes |
-| `brand-hover` | `#5E2965` | Hover das ações principais |
-| `brand-soft` | `#F7EDF8` | Destaques suaves e ações secundárias |
-| `brand-selected` | `#EEDCF0` | Opções e abas selecionadas |
-| `background` | `#FCF8FD` | Fundo das páginas |
+| `brand` | `#ff1d8d` | Cor primária: ações principais, ícones, detalhes de cards e bordas de seleção |
+| `brand-strong` | `#B80B61` | Títulos, valores importantes e indicadores de seleção |
+| `brand-hover` | `#FF4DA6` | Hover das ações principais |
+| `on-brand` | `#33071F` | Texto e ícones sobre a cor primária |
+| `brand-soft` | `#FFF0F7` | Destaques suaves e ações secundárias |
+| `brand-selected` | `#FFE0EF` | Opções e abas selecionadas |
+| `background` | `#FFF7FB` | Fundo das páginas |
 | `surface` | `#FFFFFF` | Cards, cabeçalhos, campos e modais |
-| `border` | `#E8D6EB` | Bordas e divisórias |
-| `text-primary` | `#322337` | Texto principal |
-| `text-secondary` | `#6E5972` | Descrições e legendas |
-| `placeholder` | `#7C6580` | Placeholders |
+| `border` | `#F2CDDD` | Bordas e divisórias |
+| `text-primary` | `#35212C` | Texto principal |
+| `text-secondary` | `#765366` | Descrições e legendas |
+| `placeholder` | `#806270` | Placeholders |
 
 Use as classes de tokens, como `bg-background`, `text-text-secondary` e `border-brand`, em vez de novos valores HEX nos componentes.
 
@@ -27,8 +28,8 @@ Os estilos reutilizáveis ficam no mesmo CSS, em `@layer components`:
 - `metric-card-featured`, `metric-card-accent` e `metric-value` estabelecem a hierarquia dos indicadores.
 - `shadow-card` e `shadow-dialog` mantêm sombras discretas. `chart-grid` fornece as linhas auxiliares dos gráficos.
 
-Sucesso usa `success`/`success-soft` (`#166534`/`#F0FDF4`), erro usa `error`/`error-soft` (`#9F1239`/`#FFF1F2`) e alerta usa `warning`/`warning-soft` (`#92400E`/`#FFFBEB`). Esses estados não devem ser convertidos em lilás.
+Sucesso usa `success`/`success-soft` (`#166534`/`#F0FDF4`), erro usa `error`/`error-soft` (`#9F1239`/`#FFF1F2`) e alerta usa `warning`/`warning-soft` (`#92400E`/`#FFFBEB`). Esses estados mantêm suas cores semânticas para serem distinguíveis da marca.
 
-`brand` tem contraste aproximado de 2,85:1 sobre branco: reserve-o para detalhes decorativos e bordas, evitando textos pequenos ou botões com texto branco. `brand-strong` sobre branco tem contraste aproximado de 7,99:1. O foco por teclado combina um contorno escuro visível com um halo lilás. Campos recebem texto de 16 px; grupos de filtros devem caber em telas de 320 px, com quebra de linha quando necessário.
+`brand` tem contraste aproximado de 3,61:1 sobre branco: use `brand-strong` para textos pequenos em superfícies claras e `on-brand` para textos nos botões primários. `brand-strong` sobre branco tem contraste aproximado de 6,44:1. O foco por teclado combina um contorno escuro visível com um halo rosa. Campos recebem texto de 16 px; grupos de filtros devem caber em telas de 320 px, com quebra de linha quando necessário.
 
 O componente `ProductionChart` mantém produção em `brand-strong`, comissão em `brand`, seleção em `brand-selected`, grade em `border` e legendas em `text-secondary`. A série clara recebe contorno escuro. Seus cálculos e callbacks permanecem os mesmos; ele não está montado nos painéis atuais.

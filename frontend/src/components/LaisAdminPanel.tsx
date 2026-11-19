@@ -1284,7 +1284,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                             className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
                               selectedCommissionDay.payoutStatus === 'paid'
                                 ? 'bg-background hover:bg-brand-soft text-text-secondary border border-border'
-                                : 'bg-brand-strong hover:bg-brand-hover text-surface'
+                                : 'btn-primary'
                             }`}
                           >
                             {selectedCommissionDay.payoutStatus === 'paid'

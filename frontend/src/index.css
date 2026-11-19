@@ -4,18 +4,19 @@
   --font-display: "Cormorant Garamond", Georgia, serif;
   --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
 
-  /* Brand accents are decorative; strong shades carry readable text/actions. */
-  --color-brand: #C084C6;
-  --color-brand-strong: #78367E;
-  --color-brand-hover: #5E2965;
-  --color-brand-soft: #F7EDF8;
-  --color-brand-selected: #EEDCF0;
-  --color-background: #FCF8FD;
+  /* Bright pink anchors the palette; dark shades keep text readable. */
+  --color-brand: #ff1d8d;
+  --color-brand-strong: #B80B61;
+  --color-brand-hover: #FF4DA6;
+  --color-on-brand: #33071F;
+  --color-brand-soft: #FFF0F7;
+  --color-brand-selected: #FFE0EF;
+  --color-background: #FFF7FB;
   --color-surface: #FFFFFF;
-  --color-border: #E8D6EB;
-  --color-text-primary: #322337;
-  --color-text-secondary: #6E5972;
-  --color-placeholder: #7C6580;
+  --color-border: #F2CDDD;
+  --color-text-primary: #35212C;
+  --color-text-secondary: #765366;
+  --color-placeholder: #806270;
   --color-overlay: var(--color-text-primary);
 
   --color-success: #166534;
@@ -77,7 +78,7 @@
 @layer components {
   /* Layout, dimensions, typography and loading states stay with each component. */
   .btn-primary {
-    @apply bg-brand-strong text-surface border border-transparent transition-colors;
+    @apply bg-brand text-on-brand border border-transparent transition-colors;
     &:hover:not(:disabled) { @apply bg-brand-hover; }
   }
 
