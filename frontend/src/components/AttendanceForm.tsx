@@ -323,7 +323,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
             <section className="space-y-2 pt-4 border-t border-border">
               <h2 className="text-base font-semibold text-text-primary">02. Valor do atendimento</h2>
               <label className="block text-[20px] text-text-secondary" htmlFor="attendanceform-field-3">
-                Qual foi o valor total pago, incluindo o sinal?
+                Qual foi o valor total pago, incluindo o sinal?{' '}
+                <span className="font-semibold text-red-600">(obrigatório)</span>
               </label>
               <div className="relative max-w-xs">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-brand-strong">
