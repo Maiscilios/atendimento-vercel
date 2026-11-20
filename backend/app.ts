@@ -628,7 +628,7 @@ export function createApiApp() {
       if (returnDays !== null) {
         if (!Array.isArray(body.preferredTimes)) {
           res.status(400).json({
-            error: 'Escolha de 1 a 3 horários de sua preferência.',
+            error: 'Escolha 1 horário de sua preferência.',
           });
           return;
         }
@@ -642,13 +642,13 @@ export function createApiApp() {
             uniqueTimes.push(slot);
           }
         }
-        if (uniqueTimes.length < 1 || uniqueTimes.length > 3) {
+        if (uniqueTimes.length !== 1) {
           res.status(400).json({
-            error: 'Escolha de 1 a 3 horários de sua preferência.',
+            error: 'Escolha 1 horário de sua preferência.',
           });
           return;
         }
-        preferredTimes = uniqueTimes.sort();
+        preferredTimes = uniqueTimes;
       }
 
       const returnStatus =

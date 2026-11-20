@@ -141,15 +141,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
   function toggleTimeSlot(slot: string) {
     setErrorMessage('');
-    setPreferredTimes((prev) => {
-      if (prev.includes(slot)) {
-        return prev.filter((t) => t !== slot);
-      }
-      if (prev.length >= 3) {
-        return prev;
-      }
-      return [...prev, slot].sort();
-    });
+    setPreferredTimes((prev) => (prev.includes(slot) ? [] : [slot]));
   }
 
   function resetForm() {
@@ -218,9 +210,9 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
       );
       return false;
     }
-    if (needsThreeTimes && preferredTimes.length < 1) {
+    if (needsThreeTimes && preferredTimes.length !== 1) {
       setErrorMessage(
-        'Por favor, escolha de 1 a 3 horários de sua preferência.',
+        'Por favor, escolha 1 horário de sua preferência.',
       );
       return false;
     }
@@ -355,9 +347,9 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
               )}
               {confirmation.preferredTimes.length > 0 && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-text-secondary">Horários escolhidos</span>
+                  <span className="text-text-secondary">Horário escolhido</span>
                   <span className="font-medium text-text-primary tabular-nums">
-                    {confirmation.preferredTimes.join(' · ')}
+                    {confirmation.preferredTimes[0]}
                   </span>
                 </div>
               )}
@@ -702,31 +694,28 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-sm sm:text-base font-semibold text-red-600">
                           <Clock className="w-4 h-4 text-red-600 shrink-0" />
-                          <span>Escolha de 1 a 3 horários de sua preferência</span>
+                          <span>Escolha 1 horário de sua preferência</span>
                         </div>
                         <span className="text-xs sm:text-sm font-semibold text-brand-strong tabular-nums">
-                          {preferredTimes.length} de até 3 selecionados
+                          {preferredTimes.length === 1
+                            ? `Selecionado: ${preferredTimes[0]}`
+                            : '0 de 1 selecionado'}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
                         {TIME_SLOTS.map((slot) => {
                           const selected = preferredTimes.includes(slot);
-                          const disabled =
-                            !selected && preferredTimes.length >= 3;
                           return (
                             <button
                               key={slot}
                               type="button"
-                              disabled={disabled}
                               onClick={() => toggleTimeSlot(slot)}
                               aria-pressed={selected}
                               className={`min-h-[48px] px-2 py-2.5 rounded-xl border text-sm sm:text-base font-semibold tabular-nums transition-colors ${
                                 selected
                                   ? 'choice-selected'
-                                  : disabled
-                                    ? 'bg-surface/50 border-border text-placeholder cursor-not-allowed'
-                                    : 'bg-surface border-border text-text-primary hover:border-brand'
+                                  : 'bg-surface border-border text-text-primary hover:border-brand'
                               }`}
                             >
                               {slot}
@@ -855,7 +844,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                   {(calculatedReturnDate || preferredTimes.length > 0) && (
                     <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
                       <dt className="text-text-secondary">
-                        Data e horários escolhidos
+                        Data e horário escolhido
                       </dt>
                       <dd className="font-semibold text-brand-strong tabular-nums sm:text-right">
                         {calculatedReturnDate
