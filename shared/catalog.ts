@@ -27,6 +27,7 @@ export interface AuthUser {
 
 export interface AttendanceRecord {
   id: string;
+  clientId?: string | null;
   professional: Professional;
   clientName: string;
   whatsapp: string;
@@ -222,8 +223,26 @@ export function extractDigits(value: string): string {
   return value.replace(/\D/g, '');
 }
 
+export function normalizeWhatsAppDigits(value: string): string {
+  let digits = extractDigits(value);
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) {
+    digits = digits.slice(2);
+  }
+  if ((digits.length === 11 || digits.length === 12) && digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+  return digits;
+}
+
 export function formatBrazilPhone(value: string): string {
-  const digits = extractDigits(value).slice(0, 11);
+  let digits = extractDigits(value);
+  if (digits.length >= 12 && digits.startsWith('55')) {
+    digits = digits.slice(2);
+  }
+  if (digits.length >= 11 && digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+  digits = digits.slice(0, 11);
   if (digits.length <= 2) return digits;
   if (digits.length <= 6) {
     return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;

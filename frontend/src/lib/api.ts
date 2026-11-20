@@ -111,7 +111,24 @@ export async function changePasswordRequest(
   });
 }
 
+export interface PublicRecognizedClient {
+  id: string;
+  name: string;
+}
+
+export async function lookupClientsByWhatsapp(
+  whatsapp: string,
+  signal?: AbortSignal,
+): Promise<PublicRecognizedClient[]> {
+  const data = await apiFetch<{ clients: PublicRecognizedClient[] }>(
+    `/api/clients/lookup?whatsapp=${encodeURIComponent(whatsapp)}`,
+    { signal },
+  );
+  return Array.isArray(data.clients) ? data.clients : [];
+}
+
 export interface SubmitAttendancePayload {
+  clientId?: string | null;
   professional: Professional;
   clientName: string;
   whatsapp: string;

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
@@ -6,7 +6,9 @@ import {
   Calendar,
   Check,
   CheckCircle2,
+  Loader2,
   Pencil,
+  RefreshCw,
 } from 'lucide-react';
 import {
   DUDA_ADDITIONALS,
@@ -22,12 +24,18 @@ import {
   getLocalDateISO,
   getReturnOptionLabel,
   getServicesCatalog,
+  normalizeWhatsAppDigits,
   parseCurrencyInput,
   type LashAttendanceType,
   type Professional,
   type ReturnOption,
 } from '../../../shared/catalog';
-import { submitAttendance, type SubmissionConfirmation } from '../lib/api';
+import {
+  lookupClientsByWhatsapp,
+  submitAttendance,
+  type PublicRecognizedClient,
+  type SubmissionConfirmation,
+} from '../lib/api';
 
 interface AttendanceFormProps {
   professional: Professional;
@@ -66,6 +74,20 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   const [step, setStep] = useState<FormStep>(1);
   const [clientName, setClientName] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [recognizedWhatsappDigits, setRecognizedWhatsappDigits] = useState('');
+  const [lookupStatus, setLookupStatus] = useState<
+    'idle' | 'loading' | 'found' | 'not_found' | 'error'
+  >('idle');
+  const [lookupError, setLookupError] = useState('');
+  const [matchedClients, setMatchedClients] = useState<PublicRecognizedClient[]>(
+    [],
+  );
+  const [disambiguatedClientId, setDisambiguatedClientId] = useState<
+    string | null
+  >(null);
+  const [forceNewNameSamePhone, setForceNewNameSamePhone] = useState(false);
+
   const [totalPaidInput, setTotalPaidInput] = useState('');
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [serviceAttendanceTypes, setServiceAttendanceTypes] = useState<
@@ -84,12 +106,100 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   );
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const whatsappInputRef = useRef<HTMLInputElement | null>(null);
+  const clientNameInputRef = useRef<HTMLInputElement | null>(null);
+  const lookupAbortRef = useRef<AbortController | null>(null);
   const totalEditRef = useRef<HTMLInputElement | null>(null);
   const whatsappEditRef = useRef<HTMLInputElement | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [confirmation, setConfirmation] = useState<SubmissionConfirmation | null>(
     null,
   );
+
+  const normalizedWhatsappDigits = useMemo(
+    () => normalizeWhatsAppDigits(whatsapp),
+    [whatsapp],
+  );
+
+  async function runWhatsappLookup(digits: string): Promise<boolean> {
+    if (digits.length < 10 || digits.length > 11) return false;
+    lookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    lookupAbortRef.current = controller;
+
+    setLookupStatus('loading');
+    setLookupError('');
+    setErrorMessage('');
+
+    try {
+      const clients = await lookupClientsByWhatsapp(digits, controller.signal);
+      if (controller.signal.aborted) return false;
+
+      setMatchedClients(clients);
+      setDisambiguatedClientId(null);
+      if (clients.length > 0) {
+        setLookupStatus('found');
+        setForceNewNameSamePhone(false);
+      } else {
+        setLookupStatus('not_found');
+        setSelectedClientId(null);
+        setRecognizedWhatsappDigits('');
+      }
+      return true;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return false;
+      }
+      setMatchedClients([]);
+      setSelectedClientId(null);
+      setDisambiguatedClientId(null);
+      setLookupStatus('error');
+      setLookupError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível consultar seu cadastro. Tente novamente.',
+      );
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (step !== 1 || confirmation) return;
+
+    if (normalizedWhatsappDigits.length < 10) {
+      lookupAbortRef.current?.abort();
+      setLookupStatus('idle');
+      setLookupError('');
+      setMatchedClients([]);
+      setSelectedClientId(null);
+      setDisambiguatedClientId(null);
+      setRecognizedWhatsappDigits('');
+      setForceNewNameSamePhone(false);
+      return;
+    }
+
+    if (
+      selectedClientId &&
+      recognizedWhatsappDigits === normalizedWhatsappDigits
+    ) {
+      return;
+    }
+
+    const delayMs = normalizedWhatsappDigits.length === 11 ? 250 : 750;
+    const timer = window.setTimeout(() => {
+      void runWhatsappLookup(normalizedWhatsappDigits);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    step,
+    confirmation,
+    normalizedWhatsappDigits,
+    selectedClientId,
+    recognizedWhatsappDigits,
+  ]);
 
   const selectedServices = useMemo(
     () =>
@@ -200,10 +310,67 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setReturnOption(option);
   }
 
+  function handleWhatsappStep1Change(rawValue: string) {
+    setWhatsapp(formatBrazilPhone(rawValue));
+    setErrorMessage('');
+    setSelectedClientId(null);
+    setDisambiguatedClientId(null);
+    setRecognizedWhatsappDigits('');
+    setForceNewNameSamePhone(false);
+    setMatchedClients([]);
+    setLookupStatus('idle');
+    setLookupError('');
+  }
+
+  function handleConfirmRecognizedClient(client: PublicRecognizedClient) {
+    setClientName(client.name);
+    setSelectedClientId(client.id);
+    setRecognizedWhatsappDigits(normalizedWhatsappDigits);
+    setErrorMessage('');
+    goToStep(2);
+  }
+
+  function handleRejectRecognizedClient() {
+    lookupAbortRef.current?.abort();
+    setSelectedClientId(null);
+    setDisambiguatedClientId(null);
+    setRecognizedWhatsappDigits('');
+    setMatchedClients([]);
+    setForceNewNameSamePhone(false);
+    setLookupStatus('idle');
+    setLookupError('');
+    setClientName('');
+    setErrorMessage('');
+    window.setTimeout(() => {
+      whatsappInputRef.current?.focus();
+      whatsappInputRef.current?.select();
+    }, 0);
+  }
+
+  function handleUseSamePhoneNewPerson() {
+    setSelectedClientId(null);
+    setDisambiguatedClientId(null);
+    setRecognizedWhatsappDigits('');
+    setForceNewNameSamePhone(true);
+    setClientName('');
+    setErrorMessage('');
+    window.setTimeout(() => {
+      clientNameInputRef.current?.focus();
+    }, 0);
+  }
+
   function resetForm() {
+    lookupAbortRef.current?.abort();
     setStep(1);
     setClientName('');
     setWhatsapp('');
+    setSelectedClientId(null);
+    setRecognizedWhatsappDigits('');
+    setLookupStatus('idle');
+    setLookupError('');
+    setMatchedClients([]);
+    setDisambiguatedClientId(null);
+    setForceNewNameSamePhone(false);
     setTotalPaidInput('');
     setSelectedServiceIds([]);
     setServiceAttendanceTypes({});
@@ -232,15 +399,30 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   }
 
   function validateStep1(): boolean {
-    if (clientName.trim().length < 2) {
-      setErrorMessage('Por favor, informe seu nome completo.');
-      return false;
-    }
-    const digits = whatsapp.replace(/\D/g, '');
-    if (digits.length < 10) {
+    if (normalizedWhatsappDigits.length < 10 || normalizedWhatsappDigits.length > 11) {
       setErrorMessage(
         'Por favor, informe um número de WhatsApp válido com DDD.',
       );
+      return false;
+    }
+    if (lookupStatus === 'error') {
+      setErrorMessage(
+        'Não foi possível verificar o WhatsApp no banco de dados. Toque em "Tentar novamente".',
+      );
+      return false;
+    }
+    if (
+      lookupStatus === 'found' &&
+      !forceNewNameSamePhone &&
+      !selectedClientId
+    ) {
+      setErrorMessage(
+        'Confirme seu cadastro acima ou toque em "Não sou" para continuar.',
+      );
+      return false;
+    }
+    if (clientName.trim().length < 2) {
+      setErrorMessage('Por favor, informe seu nome completo.');
       return false;
     }
     return true;
@@ -300,8 +482,21 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     return true;
   }
 
-  function handleNextFromStep() {
+  async function handleNextFromStep() {
     if (step === 1) {
+      if (
+        normalizedWhatsappDigits.length < 10 ||
+        normalizedWhatsappDigits.length > 11
+      ) {
+        setErrorMessage(
+          'Por favor, informe um número de WhatsApp válido com DDD.',
+        );
+        return;
+      }
+      if (lookupStatus === 'idle' || lookupStatus === 'loading') {
+        await runWhatsappLookup(normalizedWhatsappDigits);
+        return;
+      }
       if (validateStep1()) goToStep(2);
       return;
     }
@@ -337,7 +532,12 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setSubmitting(true);
 
     try {
+      const effectiveClientId =
+        selectedClientId && recognizedWhatsappDigits === normalizedWhatsappDigits
+          ? selectedClientId
+          : null;
       const result = await submitAttendance({
+        clientId: effectiveClientId,
         professional,
         clientName: clientName.trim(),
         whatsapp,
@@ -527,33 +727,11 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                     <strong className="font-semibold text-text-primary">
                       {professionalName}
                     </strong>
-                    . Informe seu nome e WhatsApp para começar.
+                    . Informe seu WhatsApp para começar.
                   </p>
                 </div>
 
                 <div className="space-y-4">
-                  <div>
-                    <label
-                      className="block text-sm font-medium text-text-secondary mb-1.5"
-                      htmlFor="attendanceform-field-1"
-                    >
-                      Nome completo
-                    </label>
-                    <input
-                      id="attendanceform-field-1"
-                      type="text"
-                      required
-                      autoComplete="name"
-                      value={clientName}
-                      onChange={(e) => {
-                        setClientName(e.target.value);
-                        setErrorMessage('');
-                      }}
-                      placeholder="Digite seu nome completo"
-                      className="w-full min-h-[50px] px-4 py-2.5 border rounded-2xl field-control text-base"
-                    />
-                  </div>
-
                   <div>
                     <label
                       className="block text-sm font-medium text-text-secondary mb-1.5"
@@ -564,21 +742,230 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                         (obrigatório)
                       </span>
                     </label>
-                    <input
-                      id="attendanceform-field-2"
-                      type="tel"
-                      inputMode="numeric"
-                      autoComplete="tel"
-                      required
-                      value={whatsapp}
-                      onChange={(e) => {
-                        setWhatsapp(formatBrazilPhone(e.target.value));
-                        setErrorMessage('');
-                      }}
-                      placeholder="(00) 00000-0000"
-                      className="w-full min-h-[50px] px-4 py-2.5 border rounded-2xl tabular-nums field-control text-base"
-                    />
+                    <div className="relative">
+                      <input
+                        id="attendanceform-field-2"
+                        ref={whatsappInputRef}
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="tel"
+                        required
+                        value={whatsapp}
+                        onChange={(e) =>
+                          handleWhatsappStep1Change(e.target.value)
+                        }
+                        placeholder="(00) 00000-0000"
+                        className="w-full min-h-[50px] px-4 py-2.5 pr-11 border rounded-2xl tabular-nums field-control text-base"
+                      />
+                      {lookupStatus === 'loading' && (
+                        <Loader2
+                          className="w-5 h-5 text-brand-strong animate-spin absolute right-3.5 top-1/2 -translate-y-1/2"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                    {lookupStatus === 'loading' && (
+                      <p className="mt-1.5 text-xs sm:text-sm text-text-secondary">
+                        Buscando seu cadastro...
+                      </p>
+                    )}
                   </div>
+
+                  {/* Cliente única encontrada */}
+                  {lookupStatus === 'found' &&
+                    !forceNewNameSamePhone &&
+                    matchedClients.length === 1 && (
+                      <div className="p-5 sm:p-6 rounded-2xl bg-brand-soft border-2 border-brand/45 shadow-sm text-center space-y-4">
+                        <div className="space-y-1.5">
+                          <h2 className="font-display text-2xl sm:text-3xl font-semibold text-brand-strong [text-wrap:balance]">
+                            Bem-vinda de volta, {matchedClients[0].name}! 🩷
+                          </h2>
+                          <p className="text-sm sm:text-base text-text-secondary">
+                            Que bom ter você aqui novamente!
+                          </p>
+                        </div>
+
+                        <div className="space-y-2.5 pt-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleConfirmRecognizedClient(matchedClients[0])
+                            }
+                            className="w-full min-h-[52px] px-6 py-3 rounded-2xl text-base font-semibold transition-colors shadow-sm btn-primary inline-flex items-center justify-center gap-2"
+                          >
+                            <span>Continuar</span>
+                            <ArrowRight className="w-5 h-5" />
+                          </button>
+
+                          <div className="flex flex-col items-center gap-1 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={handleRejectRecognizedClient}
+                              className="text-xs sm:text-sm font-medium text-text-secondary hover:text-brand-strong underline-offset-4 hover:underline transition-colors py-1"
+                            >
+                              Não sou {matchedClients[0].name}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleUseSamePhoneNewPerson}
+                              className="text-xs text-text-secondary/80 hover:text-brand-strong underline-offset-4 hover:underline transition-colors py-0.5"
+                            >
+                              Compartilho este WhatsApp com outra pessoa
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Mais de uma cliente cadastrada com o mesmo WhatsApp */}
+                  {lookupStatus === 'found' &&
+                    !forceNewNameSamePhone &&
+                    matchedClients.length >= 2 && (
+                      <div className="p-5 sm:p-6 rounded-2xl bg-brand-soft border-2 border-brand/45 shadow-sm text-center space-y-4">
+                        <div className="space-y-1.5">
+                          <h2 className="font-display text-2xl sm:text-3xl font-semibold text-brand-strong [text-wrap:balance]">
+                            Bem-vinda de volta! 🩷
+                          </h2>
+                          <p className="text-sm sm:text-base text-text-secondary">
+                            Encontramos mais de um cadastro neste WhatsApp. Quem
+                            está sendo atendida hoje?
+                          </p>
+                        </div>
+
+                        <div className="space-y-2 text-left">
+                          {matchedClients.map((client) => {
+                            const selected =
+                              disambiguatedClientId === client.id;
+                            return (
+                              <button
+                                key={client.id}
+                                type="button"
+                                onClick={() => {
+                                  setDisambiguatedClientId(client.id);
+                                  setErrorMessage('');
+                                }}
+                                aria-pressed={selected}
+                                className={`w-full min-h-[50px] px-4 py-3 rounded-2xl border text-base font-semibold flex items-center justify-between gap-3 transition-colors ${
+                                  selected ? 'choice-selected' : 'choice-idle'
+                                }`}
+                              >
+                                <span>{client.name}</span>
+                                <span
+                                  className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                    selected
+                                      ? 'border-brand-strong bg-surface'
+                                      : 'border-placeholder bg-surface'
+                                  }`}
+                                >
+                                  {selected && (
+                                    <span className="w-2 h-2 rounded-full bg-brand-strong" />
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {(() => {
+                          const chosen = matchedClients.find(
+                            (c) => c.id === disambiguatedClientId,
+                          );
+                          return (
+                            <div className="space-y-2.5 pt-1">
+                              {chosen && (
+                                <p className="text-sm font-medium text-brand-strong">
+                                  Que bom ter você aqui novamente, {chosen.name}! 🩷
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                disabled={!chosen}
+                                onClick={() =>
+                                  chosen && handleConfirmRecognizedClient(chosen)
+                                }
+                                className="w-full min-h-[52px] px-6 py-3 rounded-2xl text-base font-semibold transition-colors shadow-sm btn-primary disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                              >
+                                <span>Continuar</span>
+                                <ArrowRight className="w-5 h-5" />
+                              </button>
+
+                              <div className="flex flex-col items-center gap-1 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={handleUseSamePhoneNewPerson}
+                                  className="text-xs sm:text-sm font-medium text-text-secondary hover:text-brand-strong underline-offset-4 hover:underline transition-colors py-1"
+                                >
+                                  Não está na lista? Cadastrar novo nome
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleRejectRecognizedClient}
+                                  className="text-xs text-text-secondary/80 hover:text-brand-strong underline-offset-4 hover:underline transition-colors py-0.5"
+                                >
+                                  Corrigir número de WhatsApp
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                  {/* Falha ao consultar banco de dados */}
+                  {lookupStatus === 'error' && (
+                    <div className="p-4 sm:p-5 rounded-2xl bg-error-soft border border-error-border text-center space-y-3">
+                      <p className="text-sm font-medium text-error">
+                        {lookupError ||
+                          'Não foi possível consultar seu cadastro no banco de dados.'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void runWhatsappLookup(normalizedWhatsappDigits)
+                        }
+                        className="min-h-[44px] px-5 py-2.5 rounded-2xl text-sm font-semibold btn-secondary inline-flex items-center justify-center gap-2"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        <span>Tentar novamente</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Cliente nova ou outro nome no mesmo WhatsApp */}
+                  {(lookupStatus === 'not_found' || forceNewNameSamePhone) && (
+                    <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft/60 border border-border space-y-3">
+                      <p className="text-xs sm:text-sm font-medium text-brand-strong">
+                        {forceNewNameSamePhone
+                          ? 'Informe seu nome completo para criar um cadastro separado neste WhatsApp.'
+                          : 'Ainda não encontramos seu cadastro. Informe seu nome completo para continuar.'}
+                      </p>
+                      <div>
+                        <label
+                          className="block text-sm font-medium text-text-secondary mb-1.5"
+                          htmlFor="attendanceform-field-1"
+                        >
+                          Nome completo{' '}
+                          <span className="font-semibold text-red-600">
+                            (obrigatório)
+                          </span>
+                        </label>
+                        <input
+                          id="attendanceform-field-1"
+                          ref={clientNameInputRef}
+                          type="text"
+                          required
+                          autoComplete="name"
+                          value={clientName}
+                          onChange={(e) => {
+                            setClientName(e.target.value);
+                            setErrorMessage('');
+                          }}
+                          placeholder="Digite seu nome completo"
+                          className="w-full min-h-[50px] px-4 py-2.5 border rounded-2xl field-control text-base"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
             )}
@@ -1125,16 +1512,25 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
             )}
 
             {/* Navegação das etapas */}
-            {step === 1 && (
-              <button
-                type="button"
-                onClick={handleNextFromStep}
-                className="w-full min-h-[54px] px-6 py-3 rounded-2xl text-base font-semibold transition-colors shadow-sm btn-primary inline-flex items-center justify-center gap-2"
-              >
-                <span>Próximo</span>
-                <ArrowRight className="w-5 h-5" />
-              </button>
-            )}
+            {step === 1 &&
+              ((lookupStatus !== 'found' && lookupStatus !== 'error') ||
+                forceNewNameSamePhone) && (
+                <button
+                  type="button"
+                  disabled={lookupStatus === 'loading'}
+                  onClick={() => void handleNextFromStep()}
+                  className="w-full min-h-[54px] px-6 py-3 rounded-2xl text-base font-semibold transition-colors shadow-sm btn-primary disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                >
+                  <span>
+                    {lookupStatus === 'loading'
+                      ? 'Verificando WhatsApp...'
+                      : lookupStatus === 'not_found' || forceNewNameSamePhone
+                        ? 'Continuar'
+                        : 'Próximo'}
+                  </span>
+                  <ArrowRight className="w-5 h-5" />
+                </button>
+              )}
 
             {(step === 2 || step === 3) && (
               <div className="grid grid-cols-2 gap-3 pt-1">

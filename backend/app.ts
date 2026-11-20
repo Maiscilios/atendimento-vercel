@@ -15,6 +15,7 @@ import {
   formatBrazilPhone,
   getBrazilTodayISO,
   getServicesCatalog,
+  normalizeWhatsAppDigits,
 } from '../shared/catalog.ts';
 import type {
   AttendanceRecord,
@@ -50,6 +51,7 @@ import {
   getSessionUser,
   getSetupStatus,
   insertAttendance,
+  lookupClientsByWhatsappDigits,
   queryAttendances,
   resetUserPasswordSetup,
   updateAttendanceReturnStatus,
@@ -171,7 +173,11 @@ function roundMoney(value: number): number {
 function buildPanelClients(records: AttendanceRecord[]): PanelClientSummary[] {
   const clientMap = new Map<string, PanelClientSummary>();
   for (const rec of records) {
-    const key = rec.whatsappDigits || rec.clientName.toLowerCase();
+    const key =
+      rec.clientId ||
+      (rec.whatsappDigits
+        ? `${rec.whatsappDigits}:${rec.clientName.trim().toLowerCase()}`
+        : rec.clientName.toLowerCase());
     const existing = clientMap.get(key);
     if (!existing) {
       clientMap.set(key, {
@@ -488,11 +494,31 @@ export function createApiApp() {
     }),
   );
 
-  // Public client submission route (preserved untouched)
+  // Public client lookup by WhatsApp (returns only matching id & name, never history/values)
+  app.get(
+    '/api/clients/lookup',
+    asyncHandler(async (req: Request, res: Response) => {
+      const rawWhatsapp =
+        typeof req.query.whatsapp === 'string' ? req.query.whatsapp : '';
+      const digits = normalizeWhatsAppDigits(rawWhatsapp);
+      if (digits.length < 10 || digits.length > 11) {
+        res.status(400).json({
+          error: 'Informe o WhatsApp com DDD (10 ou 11 dígitos).',
+        });
+        return;
+      }
+
+      const clients = await lookupClientsByWhatsappDigits(digits);
+      res.json({ clients });
+    }),
+  );
+
+  // Public client submission route
   app.post(
     '/api/attendances',
     asyncHandler(async (req: Request, res: Response) => {
       const body = req.body as {
+        clientId?: unknown;
         professional?: unknown;
         clientName?: unknown;
         whatsapp?: unknown;
@@ -527,14 +553,18 @@ export function createApiApp() {
           .json({ error: 'Informe um número de WhatsApp válido.' });
         return;
       }
-      const whatsappDigits = extractDigits(body.whatsapp);
-      if (whatsappDigits.length < 10 || whatsappDigits.length > 13) {
+      const whatsappDigits = normalizeWhatsAppDigits(body.whatsapp);
+      if (whatsappDigits.length < 10 || whatsappDigits.length > 11) {
         res
           .status(400)
           .json({ error: 'Informe o WhatsApp com DDD (10 ou 11 dígitos).' });
         return;
       }
       const whatsapp = formatBrazilPhone(whatsappDigits);
+      const clientId =
+        typeof body.clientId === 'string' && body.clientId.trim().length > 0
+          ? body.clientId.trim().slice(0, 120)
+          : null;
 
       const totalPaidNum =
         typeof body.totalPaid === 'number'
@@ -665,6 +695,7 @@ export function createApiApp() {
           : null;
 
       const record = await insertAttendance({
+        clientId,
         professional: professional as Professional,
         clientName,
         whatsapp,

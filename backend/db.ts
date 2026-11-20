@@ -1,14 +1,16 @@
 import crypto from 'node:crypto';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { getDatabase, isDatabaseConfigured } from './database.ts';
-import type {
-  AttendanceRecord,
-  AuthUser,
-  Professional,
-  ReturnOption,
-  ReturnStatus,
-  ServiceItem,
-  UserRole,
+import {
+  formatBrazilPhone,
+  normalizeWhatsAppDigits,
+  type AttendanceRecord,
+  type AuthUser,
+  type Professional,
+  type ReturnOption,
+  type ReturnStatus,
+  type ServiceItem,
+  type UserRole,
 } from '../shared/catalog.ts';
 import type {
   AgendaAppointment,
@@ -37,8 +39,25 @@ const SCHEMA = `
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS clients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    whatsapp TEXT NOT NULL,
+    whatsapp_digits TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_whatsapp_name
+    ON clients(whatsapp_digits, normalized_name);
+
+  CREATE INDEX IF NOT EXISTS idx_clients_whatsapp_digits
+    ON clients(whatsapp_digits);
+
   CREATE TABLE IF NOT EXISTS attendances (
     id TEXT PRIMARY KEY,
+    client_id TEXT REFERENCES clients(id) ON DELETE SET NULL,
     professional TEXT NOT NULL CHECK(professional IN ('lais', 'duda')),
     client_name TEXT NOT NULL,
     whatsapp TEXT NOT NULL,
@@ -60,6 +79,7 @@ const SCHEMA = `
   );
 
   ALTER TABLE attendances ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+  ALTER TABLE attendances ADD COLUMN IF NOT EXISTS client_id TEXT REFERENCES clients(id) ON DELETE SET NULL;
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_attendances_idempotency
     ON attendances(idempotency_key)
@@ -78,6 +98,9 @@ const SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_attendances_whatsapp
     ON attendances(whatsapp_digits);
+
+  CREATE INDEX IF NOT EXISTS idx_attendances_client_id
+    ON attendances(client_id);
 
   CREATE TABLE IF NOT EXISTS agenda_appointments (
     id TEXT PRIMARY KEY,
@@ -148,14 +171,34 @@ const memoryUsers = new Map<string, DbUserRow>([
   ],
 ]);
 
+interface DbClientRow {
+  id: string;
+  name: string;
+  normalized_name: string;
+  whatsapp: string;
+  whatsapp_digits: string;
+  created_at: string;
+  updated_at: string;
+}
+
 const memorySessions = new Map<
   string,
   { token: string; user_id: string; expires_at: string; created_at: string }
 >();
+const memoryClients = new Map<string, DbClientRow>();
 const memoryAttendances = new Map<string, AttendanceRecord>();
 const memoryAttendanceIdempotency = new Map<string, string>();
 const memoryCommissionPayouts = new Map<string, DbCommissionPayoutRow>();
 const memoryAgendaAppointments = new Map<string, AgendaAppointment>();
+
+export function normalizeClientName(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
 
 let initialization: Promise<void> | undefined;
 
@@ -191,6 +234,50 @@ async function prepareDatabase(): Promise<void> {
         [...user, now],
       );
     }
+
+    // Backfill shared clients from any existing attendances without client_id.
+    const unlinked = await client.query<{
+      id: string;
+      client_name: string;
+      whatsapp: string;
+      whatsapp_digits: string;
+      created_at: string;
+      updated_at: string;
+    }>(
+      'SELECT id, client_name, whatsapp, whatsapp_digits, created_at, updated_at FROM attendances WHERE client_id IS NULL ORDER BY created_at ASC',
+    );
+    for (const row of unlinked.rows) {
+      const digits = normalizeWhatsAppDigits(
+        row.whatsapp_digits || row.whatsapp,
+      );
+      const normName = normalizeClientName(row.client_name);
+      if (!digits || !normName) continue;
+      const formattedPhone = formatBrazilPhone(digits);
+      const upserted = await client.query<{ id: string }>(
+        `INSERT INTO clients (id, name, normalized_name, whatsapp, whatsapp_digits, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (whatsapp_digits, normalized_name)
+         DO UPDATE SET updated_at = GREATEST(clients.updated_at, EXCLUDED.updated_at)
+         RETURNING id`,
+        [
+          crypto.randomUUID(),
+          row.client_name.trim(),
+          normName,
+          formattedPhone,
+          digits,
+          row.created_at,
+          row.updated_at,
+        ],
+      );
+      const clientId = upserted.rows[0]?.id;
+      if (clientId) {
+        await client.query(
+          'UPDATE attendances SET client_id = $1, whatsapp_digits = $2, whatsapp = $3 WHERE id = $4',
+          [clientId, digits, formattedPhone, row.id],
+        );
+      }
+    }
+
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -435,8 +522,41 @@ export async function deleteSession(token: string): Promise<void> {
   await execute('DELETE FROM sessions WHERE token = $1', [token]);
 }
 
+export interface PublicRecognizedClient {
+  id: string;
+  name: string;
+}
+
+export async function lookupClientsByWhatsappDigits(
+  rawWhatsappDigits: string,
+): Promise<PublicRecognizedClient[]> {
+  const digits = normalizeWhatsAppDigits(rawWhatsappDigits);
+  if (digits.length < 10) return [];
+
+  if (!isDatabaseConfigured()) {
+    return Array.from(memoryClients.values())
+      .filter((c) => c.whatsapp_digits === digits)
+      .sort(
+        (a, b) =>
+          b.updated_at.localeCompare(a.updated_at) ||
+          a.created_at.localeCompare(b.created_at),
+      )
+      .map((c) => ({ id: c.id, name: c.name }));
+  }
+
+  const { rows } = await execute<{ id: string; name: string }>(
+    `SELECT id, name
+     FROM clients
+     WHERE whatsapp_digits = $1
+     ORDER BY updated_at DESC, created_at ASC`,
+    [digits],
+  );
+  return rows.map((row) => ({ id: row.id, name: row.name }));
+}
+
 interface DbAttendanceRow {
   id: string;
+  client_id?: string | null;
   professional: Professional;
   client_name: string;
   whatsapp: string;
@@ -481,6 +601,7 @@ export function mapAttendanceRow(row: DbAttendanceRow): AttendanceRecord {
 
   return {
     id: row.id,
+    clientId: row.client_id ?? null,
     professional: row.professional,
     clientName: row.client_name,
     whatsapp: row.whatsapp,
@@ -502,6 +623,7 @@ export function mapAttendanceRow(row: DbAttendanceRow): AttendanceRecord {
 }
 
 export interface InsertAttendanceInput {
+  clientId?: string | null;
   professional: Professional;
   clientName: string;
   whatsapp: string;
@@ -526,6 +648,10 @@ export async function insertAttendance(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const idempotencyKey = input.idempotencyKey?.trim() || null;
+  const normalizedDigits = normalizeWhatsAppDigits(input.whatsappDigits);
+  const formattedWhatsapp = formatBrazilPhone(normalizedDigits);
+  const cleanedName = input.clientName.trim().replace(/\s+/g, ' ');
+  const normName = normalizeClientName(cleanedName);
 
   if (!isDatabaseConfigured()) {
     if (idempotencyKey) {
@@ -535,12 +661,45 @@ export async function insertAttendance(
         return existing;
       }
     }
+
+    let resolvedClient: DbClientRow | undefined;
+    if (input.clientId) {
+      const candidate = memoryClients.get(input.clientId);
+      if (candidate && candidate.whatsapp_digits === normalizedDigits) {
+        resolvedClient = candidate;
+        candidate.updated_at = now;
+      }
+    }
+    if (!resolvedClient) {
+      resolvedClient = Array.from(memoryClients.values()).find(
+        (c) =>
+          c.whatsapp_digits === normalizedDigits &&
+          c.normalized_name === normName,
+      );
+      if (resolvedClient) {
+        resolvedClient.updated_at = now;
+        resolvedClient.whatsapp = formattedWhatsapp;
+      } else {
+        resolvedClient = {
+          id: crypto.randomUUID(),
+          name: cleanedName,
+          normalized_name: normName,
+          whatsapp: formattedWhatsapp,
+          whatsapp_digits: normalizedDigits,
+          created_at: now,
+          updated_at: now,
+        };
+        memoryClients.set(resolvedClient.id, resolvedClient);
+      }
+    }
+
     const record: AttendanceRecord = {
       id,
+      clientId: resolvedClient.id,
       professional: input.professional,
-      clientName: input.clientName,
-      whatsapp: input.whatsapp,
-      whatsappDigits: input.whatsappDigits,
+      clientName: resolvedClient.name,
+      whatsapp: formattedWhatsapp,
+      whatsappDigits: normalizedDigits,
       serviceDate: input.serviceDate,
       services: input.services,
       additionals: input.additionals,
@@ -562,60 +721,127 @@ export async function insertAttendance(
     return record;
   }
 
-  const inserted = await execute<DbAttendanceRow>(
-    `
-    INSERT INTO attendances (
-      id, professional, client_name, whatsapp, whatsapp_digits,
-      service_date, services_json, additionals_json, total_paid,
-      commission_rate, commission_amount, return_option, return_days,
-      return_date, preferred_times_json, return_status, idempotency_key, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-    ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-    RETURNING *
-    `,
-    [
-      id,
-      input.professional,
-      input.clientName,
-      input.whatsapp,
-      input.whatsappDigits,
-      input.serviceDate,
-      JSON.stringify(input.services),
-      JSON.stringify(input.additionals),
-      input.totalPaid,
-      input.commissionRate,
-      input.commissionAmount,
-      input.returnOption,
-      input.returnDays,
-      input.returnDate,
-      JSON.stringify(input.preferredTimes),
-      input.returnStatus,
-      idempotencyKey,
-      now,
-      now,
-    ],
-  );
-
-  if (inserted.rows[0]) {
-    return mapAttendanceRow(inserted.rows[0]);
-  }
-
-  if (idempotencyKey) {
-    const existing = (
-      await execute<DbAttendanceRow>(
+  return withTransaction(async (client) => {
+    if (idempotencyKey) {
+      const existingByKey = await execute<DbAttendanceRow>(
         'SELECT * FROM attendances WHERE idempotency_key = $1',
         [idempotencyKey],
+        client,
+      );
+      if (existingByKey.rows[0]) {
+        return mapAttendanceRow(existingByKey.rows[0]);
+      }
+    }
+
+    let resolvedClientId: string | null = null;
+    let resolvedClientName = cleanedName;
+
+    if (input.clientId) {
+      const existingClient = await execute<{
+        id: string;
+        name: string;
+        whatsapp_digits: string;
+      }>(
+        'SELECT id, name, whatsapp_digits FROM clients WHERE id = $1',
+        [input.clientId],
+        client,
+      );
+      const found = existingClient.rows[0];
+      if (found && found.whatsapp_digits === normalizedDigits) {
+        resolvedClientId = found.id;
+        resolvedClientName = found.name;
+        await execute(
+          'UPDATE clients SET updated_at = $1, whatsapp = $2 WHERE id = $3',
+          [now, formattedWhatsapp, found.id],
+          client,
+        );
+      }
+    }
+
+    if (!resolvedClientId) {
+      const upsertedClient = await execute<{ id: string; name: string }>(
+        `INSERT INTO clients (
+          id, name, normalized_name, whatsapp, whatsapp_digits, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $6)
+        ON CONFLICT (whatsapp_digits, normalized_name)
+        DO UPDATE SET updated_at = EXCLUDED.updated_at, whatsapp = EXCLUDED.whatsapp
+        RETURNING id, name`,
+        [
+          crypto.randomUUID(),
+          cleanedName,
+          normName,
+          formattedWhatsapp,
+          normalizedDigits,
+          now,
+        ],
+        client,
+      );
+      resolvedClientId = upsertedClient.rows[0].id;
+      resolvedClientName = upsertedClient.rows[0].name;
+    }
+
+    const inserted = await execute<DbAttendanceRow>(
+      `
+      INSERT INTO attendances (
+        id, client_id, professional, client_name, whatsapp, whatsapp_digits,
+        service_date, services_json, additionals_json, total_paid,
+        commission_rate, commission_amount, return_option, return_days,
+        return_date, preferred_times_json, return_status, idempotency_key, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+      ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+      RETURNING *
+      `,
+      [
+        id,
+        resolvedClientId,
+        input.professional,
+        resolvedClientName,
+        formattedWhatsapp,
+        normalizedDigits,
+        input.serviceDate,
+        JSON.stringify(input.services),
+        JSON.stringify(input.additionals),
+        input.totalPaid,
+        input.commissionRate,
+        input.commissionAmount,
+        input.returnOption,
+        input.returnDays,
+        input.returnDate,
+        JSON.stringify(input.preferredTimes),
+        input.returnStatus,
+        idempotencyKey,
+        now,
+        now,
+      ],
+      client,
+    );
+
+    if (inserted.rows[0]) {
+      return mapAttendanceRow(inserted.rows[0]);
+    }
+
+    if (idempotencyKey) {
+      const existing = (
+        await execute<DbAttendanceRow>(
+          'SELECT * FROM attendances WHERE idempotency_key = $1',
+          [idempotencyKey],
+          client,
+        )
+      ).rows[0];
+      if (existing) {
+        return mapAttendanceRow(existing);
+      }
+    }
+
+    const created = (
+      await execute<DbAttendanceRow>(
+        'SELECT * FROM attendances WHERE id = $1',
+        [id],
+        client,
       )
     ).rows[0];
-    if (existing) {
-      return mapAttendanceRow(existing);
-    }
-  }
-
-  const created = (
-    await execute('SELECT * FROM attendances WHERE id = $1', [id])
-  ).rows[0] as unknown as DbAttendanceRow;
-  return mapAttendanceRow(created);
+    return mapAttendanceRow(created);
+  });
 }
 
 export interface AttendanceQueryFilters {
