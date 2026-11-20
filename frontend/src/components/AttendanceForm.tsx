@@ -79,6 +79,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const totalEditRef = useRef<HTMLInputElement | null>(null);
+  const whatsappEditRef = useRef<HTMLInputElement | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [confirmation, setConfirmation] = useState<SubmissionConfirmation | null>(
     null,
@@ -823,11 +824,53 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                     </dd>
                   </div>
 
-                  <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
-                    <dt className="text-text-secondary">WhatsApp</dt>
-                    <dd className="font-semibold text-text-primary tabular-nums sm:text-right">
-                      {formatBrazilPhone(whatsapp)}
-                    </dd>
+                  <div className="py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <label
+                        htmlFor="attendanceform-final-whatsapp"
+                        className="text-text-secondary"
+                      >
+                        WhatsApp
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          whatsappEditRef.current?.focus();
+                          whatsappEditRef.current?.select();
+                        }}
+                        className="sm:hidden inline-flex items-center gap-1 text-xs font-semibold text-brand-strong hover:underline"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Editar</span>
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      <input
+                        id="attendanceform-final-whatsapp"
+                        ref={whatsappEditRef}
+                        type="tel"
+                        inputMode="numeric"
+                        aria-label="WhatsApp da cliente"
+                        value={whatsapp}
+                        onChange={(e) => {
+                          setWhatsapp(formatBrazilPhone(e.target.value));
+                          setErrorMessage('');
+                        }}
+                        placeholder="(00) 00000-0000"
+                        className="w-full sm:w-44 min-h-[40px] px-3 py-1.5 rounded-xl bg-background border border-border font-semibold text-text-primary tabular-nums sm:text-right focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          whatsappEditRef.current?.focus();
+                          whatsappEditRef.current?.select();
+                        }}
+                        className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-brand-strong hover:underline shrink-0"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
