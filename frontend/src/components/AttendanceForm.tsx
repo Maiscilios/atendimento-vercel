@@ -715,8 +715,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                 </div>
 
                 {isDuda && (
-                  <div className="space-y-3 pt-1">
-                    <p className="text-base font-semibold text-text-primary">
+                  <div className="rounded-2xl bg-brand-soft border-2 border-brand/45 p-4 sm:p-5 space-y-3 shadow-sm">
+                    <p className="text-base font-semibold text-brand-strong">
                       Teve algum adicional?
                     </p>
                     <div className="grid grid-cols-2 gap-2.5">
