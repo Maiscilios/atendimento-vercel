@@ -120,6 +120,7 @@ export interface SubmitAttendancePayload {
   returnOption: ReturnOption;
   preferredTimes: string[];
   serviceDate: string;
+  idempotencyKey?: string;
 }
 
 export interface SubmissionConfirmation {

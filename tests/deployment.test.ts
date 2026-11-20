@@ -216,7 +216,7 @@ test(
             ],
             additionals: [],
             returnOption: '15_days',
-            preferredTimes: ['08:00', '09:00'],
+            preferredTimes: ['08:00', '09:00', '10:00'],
             serviceDate: date,
           });
           assert.equal(response.status, 201, JSON.stringify(response.data));

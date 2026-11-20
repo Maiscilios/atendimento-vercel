@@ -54,9 +54,16 @@ const SCHEMA = `
     return_date TEXT,
     preferred_times_json TEXT NOT NULL,
     return_status TEXT NOT NULL CHECK(return_status IN ('waiting', 'confirmed', 'not_applicable')),
+    idempotency_key TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+
+  ALTER TABLE attendances ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_attendances_idempotency
+    ON attendances(idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS commission_payouts (
     payout_date TEXT PRIMARY KEY,
@@ -146,6 +153,7 @@ const memorySessions = new Map<
   { token: string; user_id: string; expires_at: string; created_at: string }
 >();
 const memoryAttendances = new Map<string, AttendanceRecord>();
+const memoryAttendanceIdempotency = new Map<string, string>();
 const memoryCommissionPayouts = new Map<string, DbCommissionPayoutRow>();
 const memoryAgendaAppointments = new Map<string, AgendaAppointment>();
 
@@ -509,6 +517,7 @@ export interface InsertAttendanceInput {
   returnDate: string | null;
   preferredTimes: string[];
   returnStatus: ReturnStatus;
+  idempotencyKey?: string | null;
 }
 
 export async function insertAttendance(
@@ -516,8 +525,16 @@ export async function insertAttendance(
 ): Promise<AttendanceRecord> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
 
   if (!isDatabaseConfigured()) {
+    if (idempotencyKey) {
+      const existingId = memoryAttendanceIdempotency.get(idempotencyKey);
+      const existing = existingId ? memoryAttendances.get(existingId) : undefined;
+      if (existing) {
+        return existing;
+      }
+    }
     const record: AttendanceRecord = {
       id,
       professional: input.professional,
@@ -539,17 +556,22 @@ export async function insertAttendance(
       updatedAt: now,
     };
     memoryAttendances.set(id, record);
+    if (idempotencyKey) {
+      memoryAttendanceIdempotency.set(idempotencyKey, id);
+    }
     return record;
   }
 
-  await execute(
+  const inserted = await execute<DbAttendanceRow>(
     `
     INSERT INTO attendances (
       id, professional, client_name, whatsapp, whatsapp_digits,
       service_date, services_json, additionals_json, total_paid,
       commission_rate, commission_amount, return_option, return_days,
-      return_date, preferred_times_json, return_status, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      return_date, preferred_times_json, return_status, idempotency_key, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+    ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+    RETURNING *
     `,
     [
       id,
@@ -568,10 +590,27 @@ export async function insertAttendance(
       input.returnDate,
       JSON.stringify(input.preferredTimes),
       input.returnStatus,
+      idempotencyKey,
       now,
       now,
     ],
   );
+
+  if (inserted.rows[0]) {
+    return mapAttendanceRow(inserted.rows[0]);
+  }
+
+  if (idempotencyKey) {
+    const existing = (
+      await execute<DbAttendanceRow>(
+        'SELECT * FROM attendances WHERE idempotency_key = $1',
+        [idempotencyKey],
+      )
+    ).rows[0];
+    if (existing) {
+      return mapAttendanceRow(existing);
+    }
+  }
 
   const created = (
     await execute('SELECT * FROM attendances WHERE id = $1', [id])

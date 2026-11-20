@@ -517,6 +517,7 @@ export function createApiApp() {
         returnOption?: unknown;
         preferredTimes?: unknown;
         serviceDate?: unknown;
+        idempotencyKey?: unknown;
       };
 
       const professional = body.professional;
@@ -624,7 +625,7 @@ export function createApiApp() {
       if (returnDays !== null) {
         if (!Array.isArray(body.preferredTimes)) {
           res.status(400).json({
-            error: 'Escolha exatamente 2 horários de sua disponibilidade.',
+            error: 'Escolha exatamente 3 horários de sua preferência.',
           });
           return;
         }
@@ -638,9 +639,9 @@ export function createApiApp() {
             uniqueTimes.push(slot);
           }
         }
-        if (uniqueTimes.length !== 2) {
+        if (uniqueTimes.length !== 3) {
           res.status(400).json({
-            error: 'Escolha exatamente 2 horários de sua disponibilidade.',
+            error: 'Escolha exatamente 3 horários de sua preferência.',
           });
           return;
         }
@@ -653,6 +654,12 @@ export function createApiApp() {
       const commissionRate = professional === 'duda' ? 0.25 : 0;
       const commissionAmount =
         professional === 'duda' ? roundMoney(totalPaid * 0.25) : 0;
+
+      const idempotencyKey =
+        typeof body.idempotencyKey === 'string' &&
+        body.idempotencyKey.trim().length > 0
+          ? body.idempotencyKey.trim().slice(0, 128)
+          : null;
 
       const record = await insertAttendance({
         professional: professional as Professional,
@@ -670,6 +677,7 @@ export function createApiApp() {
         returnDate,
         preferredTimes,
         returnStatus,
+        idempotencyKey,
       });
 
       res.status(201).json({

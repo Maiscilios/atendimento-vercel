@@ -36,7 +36,7 @@ export function HomeScreen({
       <main className="flex-1 flex flex-col justify-center px-4 sm:px-8 py-8 sm:py-12 bg-[#dd57a5]">
         <div className="w-full max-w-5xl mx-auto bg-[#dd57a5] p-7 sm:p-12 md:p-16 flex flex-col justify-center">
           <div className="text-center">
-            <h1 className="font-['Times_New_Roman',Times,serif] text-3xl sm:text-4xl md:text-5xl font-bold text-[#ffffff] [text-wrap:balance]">
+            <h1 className="font-['Times_New_Roman',Times,serif] text-[50px] text-left font-bold text-[#ffffff] [text-wrap:balance]">
               Confirme seu atendimento
             </h1>
             <p className="mt-2 text-base sm:text-lg text-[#000000] font-bold">
