@@ -21,7 +21,13 @@ import {
 
 export type AgendaBookingModalState =
   | { kind: 'closed' }
-  | { kind: 'create'; professional: Professional; initialDate: string }
+  | {
+      kind: 'create';
+      professional: Professional;
+      initialDate: string;
+      initialClientName?: string;
+      initialWhatsapp?: string;
+    }
   | { kind: 'edit'; appointment: AgendaAppointment }
   | { kind: 'confirm-request'; request: AttendanceRecord };
 
@@ -79,8 +85,10 @@ export function AgendaBookingModal({
     setSubmitting(false);
 
     if (state.kind === 'create') {
-      setClientName('');
-      setWhatsapp('');
+      setClientName(state.initialClientName ?? '');
+      setWhatsapp(
+        state.initialWhatsapp ? formatBrazilPhone(state.initialWhatsapp) : ''
+      );
       setSelectedServiceNames([]);
       setCustomProcedure('');
       setAppointmentDate(state.initialDate || getBrazilTodayISO());

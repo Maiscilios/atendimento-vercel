@@ -44,7 +44,7 @@ import {
   fetchDudaDashboard,
 } from '../lib/api';
 import { AgendaBookingModal, type AgendaBookingModalState } from './AgendaBookingModal';
-import { AgendaCalendarTab } from './AgendaCalendarTab';
+import { AgendaCalendarTab, type AgendaInitialBookingRequest } from './AgendaCalendarTab';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ClientDetailModal } from './ClientDetailModal';
 import { PanelSidebarNav, type SidebarNavItem } from './PanelSidebarNav';
@@ -94,6 +94,8 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
   });
   const [agendaFeedback, setAgendaFeedback] = useState('');
   const [agendaFocusDate, setAgendaFocusDate] = useState<string | undefined>(undefined);
+  const [agendaInitialBooking, setAgendaInitialBooking] =
+    useState<AgendaInitialBookingRequest | null>(null);
 
   // Tab 4: Minhas comissões (consulta dia a dia, sem saldo geral acumulado)
   const [commissionDate, setCommissionDate] = useState<string>(() => getLocalDateISO());
@@ -468,15 +470,33 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                         </div>
                       </div>
 
-                      <a
-                        href={buildWhatsAppLink(client.whatsapp)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 self-start sm:self-auto transition-colors tabular-nums btn-success-soft"
-                      >
-                        <MessageCircle className="w-4 h-4" />
-                        <span>{client.whatsapp}</span>
-                      </a>
+                      <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                        <a
+                          href={buildWhatsAppLink(client.whatsapp)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 transition-colors tabular-nums btn-success-soft"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          <span>{client.whatsapp}</span>
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAgendaInitialBooking({
+                              requestId: Date.now(),
+                              clientName: client.clientName,
+                              whatsapp: client.whatsapp,
+                            });
+                            setActiveTab('agenda');
+                          }}
+                          className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors btn-primary"
+                        >
+                          <CalendarPlus className="w-4 h-4" />
+                          <span>Agendar</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -664,7 +684,12 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
 
         {/* MINHA AGENDA (EXCLUSIVA DA DUDA) */}
         {activeTab === 'agenda' && (
-          <AgendaCalendarTab isAdmin={false} initialDate={agendaFocusDate} />
+          <AgendaCalendarTab
+            isAdmin={false}
+            initialDate={agendaFocusDate}
+            initialBooking={agendaInitialBooking}
+            onInitialBookingConsumed={() => setAgendaInitialBooking(null)}
+          />
         )}
 
         {/* 4. MINHAS COMISSÕES (POR DIA SEPARADAMENTE — SEM SALDO GERAL ACUMULADO) */}

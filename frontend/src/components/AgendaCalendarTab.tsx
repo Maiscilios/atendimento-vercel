@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar,
   CheckCircle2,
@@ -30,10 +30,19 @@ import {
 } from '../lib/api';
 import { AgendaBookingModal, type AgendaBookingModalState } from './AgendaBookingModal';
 
+export interface AgendaInitialBookingRequest {
+  requestId: number;
+  clientName: string;
+  whatsapp: string;
+  professional?: Professional;
+}
+
 interface AgendaCalendarTabProps {
   isAdmin: boolean;
   initialDate?: string;
   initialProfessional?: Professional;
+  initialBooking?: AgendaInitialBookingRequest | null;
+  onInitialBookingConsumed?: () => void;
 }
 
 const WEEKDAY_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -132,6 +141,8 @@ export function AgendaCalendarTab({
   isAdmin,
   initialDate,
   initialProfessional,
+  initialBooking,
+  onInitialBookingConsumed,
 }: AgendaCalendarTabProps) {
   const [brazilToday, setBrazilToday] = useState<string>(() => getBrazilTodayISO());
   const [activeProfessional, setActiveProfessional] = useState<Professional>(
@@ -151,6 +162,7 @@ export function AgendaCalendarTab({
   const [actionLoading, setActionLoading] = useState(false);
 
   const [bookingModal, setBookingModal] = useState<AgendaBookingModalState>({ kind: 'closed' });
+  const lastConsumedBookingIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (initialDate) {
@@ -163,6 +175,34 @@ export function AgendaCalendarTab({
       setActiveProfessional(initialProfessional);
     }
   }, [isAdmin, initialProfessional]);
+
+  useEffect(() => {
+    if (!initialBooking) return;
+    if (lastConsumedBookingIdRef.current === initialBooking.requestId) return;
+    lastConsumedBookingIdRef.current = initialBooking.requestId;
+
+    const targetProfessional: Professional = isAdmin
+      ? initialBooking.professional || activeProfessional
+      : 'duda';
+    if (isAdmin && initialBooking.professional) {
+      setActiveProfessional(initialBooking.professional);
+    }
+    setBookingModal({
+      kind: 'create',
+      professional: targetProfessional,
+      initialDate: selectedDate || brazilToday,
+      initialClientName: initialBooking.clientName,
+      initialWhatsapp: initialBooking.whatsapp,
+    });
+    onInitialBookingConsumed?.();
+  }, [
+    initialBooking,
+    isAdmin,
+    activeProfessional,
+    selectedDate,
+    brazilToday,
+    onInitialBookingConsumed,
+  ]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

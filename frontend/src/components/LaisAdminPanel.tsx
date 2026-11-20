@@ -55,7 +55,7 @@ import {
   updateAdminCommissionStatus,
 } from '../lib/api';
 import { AgendaBookingModal, type AgendaBookingModalState } from './AgendaBookingModal';
-import { AgendaCalendarTab } from './AgendaCalendarTab';
+import { AgendaCalendarTab, type AgendaInitialBookingRequest } from './AgendaCalendarTab';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ClientDetailModal } from './ClientDetailModal';
 import { PanelSidebarNav, type SidebarNavItem } from './PanelSidebarNav';
@@ -115,6 +115,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
   const [agendaFeedback, setAgendaFeedback] = useState('');
   const [agendaFocusDate, setAgendaFocusDate] = useState<string | undefined>(undefined);
   const [agendaFocusProfessional, setAgendaFocusProfessional] = useState<Professional>('lais');
+  const [agendaInitialBooking, setAgendaInitialBooking] =
+    useState<AgendaInitialBookingRequest | null>(null);
 
   // Tab 4: Histórico de atendimentos
   const [histProfFilter, setHistProfFilter] = useState<'all' | Professional>('all');
@@ -717,15 +719,41 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                         </div>
                       </div>
 
-                      <a
-                        href={buildWhatsAppLink(client.whatsapp)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 self-start sm:self-auto transition-colors tabular-nums btn-success-soft"
-                      >
-                        <MessageCircle className="w-4 h-4" />
-                        <span>{client.whatsapp}</span>
-                      </a>
+                      <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                        <a
+                          href={buildWhatsAppLink(client.whatsapp)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 transition-colors tabular-nums btn-success-soft"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          <span>{client.whatsapp}</span>
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const targetProf: Professional =
+                              clientProfFilter !== 'all'
+                                ? clientProfFilter
+                                : client.professionals.includes('lais')
+                                  ? 'lais'
+                                  : client.professionals[0] || 'lais';
+                            setAgendaFocusProfessional(targetProf);
+                            setAgendaInitialBooking({
+                              requestId: Date.now(),
+                              clientName: client.clientName,
+                              whatsapp: client.whatsapp,
+                              professional: targetProf,
+                            });
+                            setActiveTab('agenda');
+                          }}
+                          className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors btn-primary"
+                        >
+                          <CalendarPlus className="w-4 h-4" />
+                          <span>Agendar</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -950,6 +978,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             isAdmin={true}
             initialDate={agendaFocusDate}
             initialProfessional={agendaFocusProfessional}
+            initialBooking={agendaInitialBooking}
+            onInitialBookingConsumed={() => setAgendaInitialBooking(null)}
           />
         )}
 
