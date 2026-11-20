@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { asyncHandler } from './async-handler.ts';
 import { getDatabase, isDatabaseConfigured } from './database.ts';
 import express from 'express';
@@ -325,7 +324,7 @@ export function createApiApp() {
     asyncHandler(async (_req: Request, res: Response) => {
       res.json({
         ...(await getSetupStatus()),
-        setupKeyRequired: Boolean(process.env.SETUP_KEY?.trim()),
+        setupKeyRequired: false,
       });
     }),
   );
@@ -340,26 +339,10 @@ export function createApiApp() {
   app.post(
     '/api/auth/setup-password',
     asyncHandler(async (req: Request, res: Response) => {
-      const { username, password, setupKey } = req.body as {
+      const { username, password } = req.body as {
         username?: unknown;
         password?: unknown;
-        setupKey?: unknown;
       };
-      const expectedKey = process.env.SETUP_KEY?.trim();
-      if (expectedKey) {
-        const provided =
-          typeof setupKey === 'string'
-            ? Buffer.from(setupKey)
-            : Buffer.alloc(0);
-        const expected = Buffer.from(expectedKey);
-        if (
-          provided.length !== expected.length ||
-          !crypto.timingSafeEqual(provided, expected)
-        ) {
-          res.status(403).json({ error: 'Código de configuração inválido.' });
-          return;
-        }
-      }
       if (username !== 'lais' && username !== 'duda') {
         res.status(400).json({ error: 'Profissional inválida.' });
         return;

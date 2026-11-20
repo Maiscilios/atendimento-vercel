@@ -51,11 +51,6 @@ export function getDatabase(): Pool {
   if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname) {
     throw new Error('Configure DATABASE_URL com uma URL PostgreSQL válida.');
   }
-  if (hosted && (process.env.SETUP_KEY?.trim().length ?? 0) < 32) {
-    throw new Error(
-      'Configure SETUP_KEY com pelo menos 32 caracteres para proteger o primeiro acesso.',
-    );
-  }
 
   if (hosted || url.hostname.endsWith('.neon.tech')) {
     url.searchParams.set('sslmode', 'verify-full');

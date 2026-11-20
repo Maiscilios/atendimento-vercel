@@ -16,7 +16,6 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [setupKey, setSetupKey] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -69,7 +68,7 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
 
       setLoading(true);
       try {
-        const { user } = await setupInitialPassword(username, password.trim(), setupKey);
+        const { user } = await setupInitialPassword(username, password.trim());
         onLoginSuccess(user);
       } catch (err) {
         setError(
@@ -173,24 +172,6 @@ export function LoginScreen({ onBack, onLoginSuccess }: LoginScreenProps) {
                 <div className="p-3.5 rounded-xl bg-brand-soft border border-border text-xs sm:text-sm text-text-secondary leading-relaxed">
                   <strong>Primeiro acesso de {professionalLabel}:</strong> crie agora uma senha individual (mínimo 6 caracteres). Depois de salva, somente essa senha dará acesso ao painel.
                 </div>
-
-                {setupStatus?.setupKeyRequired && (
-                  <div>
-                    <label htmlFor="setup-key" className="block text-sm font-medium text-text-secondary mb-1.5">
-                      Código de configuração
-                    </label>
-                    <input
-                      id="setup-key"
-                      type="password"
-                      required
-                      autoComplete="off"
-                      value={setupKey}
-                      onChange={(e) => setSetupKey(e.target.value)}
-                      placeholder="Código fornecido pela administradora"
-                      className="w-full min-h-[46px] px-3.5 py-2 border rounded-xl field-control text-base"
-                    />
-                  </div>
-                )}
 
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="loginscreen-field-1">
