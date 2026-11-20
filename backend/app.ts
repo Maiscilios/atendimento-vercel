@@ -624,7 +624,7 @@ export function createApiApp() {
       if (returnDays !== null) {
         if (!Array.isArray(body.preferredTimes)) {
           res.status(400).json({
-            error: 'Escolha exatamente 3 horários de sua preferência.',
+            error: 'Escolha exatamente 2 horários de sua disponibilidade.',
           });
           return;
         }
@@ -638,9 +638,9 @@ export function createApiApp() {
             uniqueTimes.push(slot);
           }
         }
-        if (uniqueTimes.length !== 3) {
+        if (uniqueTimes.length !== 2) {
           res.status(400).json({
-            error: 'Escolha exatamente 3 horários de sua preferência.',
+            error: 'Escolha exatamente 2 horários de sua disponibilidade.',
           });
           return;
         }

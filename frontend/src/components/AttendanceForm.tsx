@@ -52,7 +52,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     return addDaysToISO(serviceDate, selectedReturnMeta.days);
   }, [selectedReturnMeta, serviceDate]);
 
-  const needsThreeTimes = Boolean(selectedReturnMeta && selectedReturnMeta.days !== null);
+  const needsTwoTimes = Boolean(selectedReturnMeta && selectedReturnMeta.days !== null);
 
   function toggleService(serviceId: string) {
     setSelectedServiceIds((prev) =>
@@ -79,7 +79,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
       if (prev.includes(slot)) {
         return prev.filter((t) => t !== slot);
       }
-      if (prev.length >= 3) {
+      if (prev.length >= 2) {
         return prev;
       }
       return [...prev, slot].sort();
@@ -130,8 +130,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
       return;
     }
 
-    if (needsThreeTimes && preferredTimes.length !== 3) {
-      setErrorMessage('Por favor, escolha exatamente 3 horários de sua preferência.');
+    if (needsTwoTimes && preferredTimes.length !== 2) {
+      setErrorMessage('Por favor, escolha exatamente 2 horários de sua disponibilidade.');
       return;
     }
 
@@ -145,7 +145,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
         serviceIds: selectedServiceIds,
         additionals: isDuda ? selectedAdditionals : [],
         returnOption,
-        preferredTimes: needsThreeTimes ? preferredTimes : [],
+        preferredTimes: needsTwoTimes ? preferredTimes : [],
         serviceDate,
       });
       setConfirmation(result);
@@ -373,7 +373,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                         >
                           {selected && <Check className="w-3.5 h-3.5" />}
                         </span>
-                        <span className="text-sm font-medium leading-tight">{service.name}</span>
+                        <span className="text-[16px] font-medium leading-tight">{service.name}</span>
                       </div>
                       <span className="text-xs sm:text-sm font-semibold tabular-nums shrink-0 text-text-secondary">
                         {formatBRL(service.price)}
@@ -451,7 +451,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                       >
                         {active && <span className="w-2 h-2 rounded-full bg-brand-strong" />}
                       </span>
-                      <span>{opt.label}</span>
+                      <span className="text-[16px]">{opt.label}</span>
                     </button>
                   );
                 })}
@@ -474,19 +474,19 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
                   <div className="pt-3 border-t border-border/70 space-y-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 text-sm font-semibold text-text-primary">
-                        <Clock className="w-4 h-4 text-brand" />
-                        <span>Escolha 3 horários de sua preferência</span>
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-red-600">
+                        <Clock className="w-4 h-4 text-red-600" />
+                        <span>Escolha 2 horários de sua disponibilidade</span>
                       </div>
                       <span className="text-xs font-semibold text-brand-strong tabular-nums">
-                        {preferredTimes.length} de 3 selecionados
+                        {preferredTimes.length} de 2 selecionados
                       </span>
                     </div>
 
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                       {TIME_SLOTS.map((slot) => {
                         const selected = preferredTimes.includes(slot);
-                        const disabled = !selected && preferredTimes.length >= 3;
+                        const disabled = !selected && preferredTimes.length >= 2;
                         return (
                           <button
                             key={slot}
@@ -507,9 +507,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                       })}
                     </div>
 
-                    <p className="text-xs text-text-secondary leading-relaxed">
-                      O retorno é uma preferência de horário, não uma reserva confirmada.{' '}
-                      {isDuda ? 'A Duda' : 'A Laís'} verificará a disponibilidade da agenda e entrará em contato.
+                    <p className="text-xs font-medium text-red-600 leading-relaxed">
+                      {isDuda ? 'A Duda' : 'A Laís'} verificará a disponibilidade de algum dos horários e confirmará com você depois.
                     </p>
                   </div>
                 </div>
