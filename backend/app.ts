@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import {
   DUDA_ADDITIONALS,
   DUDA_RETURN_OPTIONS,
+  LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
   TIME_SLOTS,
   addDaysToISO,
@@ -497,6 +498,7 @@ export function createApiApp() {
         whatsapp?: unknown;
         totalPaid?: unknown;
         serviceIds?: unknown;
+        serviceAttendanceTypes?: unknown;
         additionals?: unknown;
         returnOption?: unknown;
         preferredTimes?: unknown;
@@ -551,6 +553,13 @@ export function createApiApp() {
         return;
       }
 
+      const rawAttendanceTypes =
+        body.serviceAttendanceTypes &&
+        typeof body.serviceAttendanceTypes === 'object' &&
+        !Array.isArray(body.serviceAttendanceTypes)
+          ? (body.serviceAttendanceTypes as Record<string, unknown>)
+          : {};
+
       const catalog = getServicesCatalog(professional);
       const selectedServices: ServiceItem[] = [];
       const seenIds = new Set<string>();
@@ -559,7 +568,27 @@ export function createApiApp() {
         const found = catalog.find((item) => item.id === rawId);
         if (found) {
           seenIds.add(rawId);
-          selectedServices.push(found);
+          if (
+            professional === 'lais' &&
+            LAIS_LASH_TYPE_SERVICE_IDS.includes(found.id)
+          ) {
+            const attendanceType = rawAttendanceTypes[found.id];
+            if (
+              attendanceType !== 'Aplicação' &&
+              attendanceType !== 'Manutenção'
+            ) {
+              res.status(400).json({
+                error: `Selecione Aplicação ou Manutenção para ${found.name}.`,
+              });
+              return;
+            }
+            selectedServices.push({
+              ...found,
+              name: `${found.name} — ${attendanceType}`,
+            });
+          } else {
+            selectedServices.push(found);
+          }
         }
       }
 
@@ -611,7 +640,7 @@ export function createApiApp() {
       if (returnDays !== null) {
         if (!Array.isArray(body.preferredTimes)) {
           res.status(400).json({
-            error: 'Escolha 1 horário de sua preferência.',
+            error: 'Escolha o período de sua preferência (Manhã, Tarde ou Noite).',
           });
           return;
         }
@@ -627,7 +656,7 @@ export function createApiApp() {
         }
         if (uniqueTimes.length !== 1) {
           res.status(400).json({
-            error: 'Escolha 1 horário de sua preferência.',
+            error: 'Escolha o período de sua preferência (Manhã, Tarde ou Noite).',
           });
           return;
         }

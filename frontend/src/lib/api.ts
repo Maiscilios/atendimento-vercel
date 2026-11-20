@@ -1,6 +1,7 @@
 import type {
   AttendanceRecord,
   AuthUser,
+  LashAttendanceType,
   Professional,
   ReturnOption,
 } from '../../../shared/catalog';
@@ -116,6 +117,7 @@ export interface SubmitAttendancePayload {
   whatsapp: string;
   totalPaid: number;
   serviceIds: string[];
+  serviceAttendanceTypes?: Record<string, LashAttendanceType>;
   additionals: string[];
   returnOption: ReturnOption;
   preferredTimes: string[];

@@ -12,6 +12,7 @@ import {
 import {
   DUDA_ADDITIONALS,
   DUDA_RETURN_OPTIONS,
+  LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
   TIME_SLOTS,
   addDaysToISO,
@@ -24,6 +25,7 @@ import {
   getReturnOptionLabel,
   getServicesCatalog,
   parseCurrencyInput,
+  type LashAttendanceType,
   type Professional,
   type ReturnOption,
 } from '../../../shared/catalog';
@@ -68,7 +70,14 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   const [whatsapp, setWhatsapp] = useState('');
   const [totalPaidInput, setTotalPaidInput] = useState('');
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [serviceAttendanceTypes, setServiceAttendanceTypes] = useState<
+    Record<string, LashAttendanceType>
+  >({});
+  const [hasAdditionals, setHasAdditionals] = useState<'yes' | 'no' | null>(null);
   const [selectedAdditionals, setSelectedAdditionals] = useState<string[]>([]);
+  const [wantsToScheduleReturn, setWantsToScheduleReturn] = useState<
+    'yes' | 'no' | null
+  >(null);
   const [returnOption, setReturnOption] = useState<ReturnOption | null>(null);
   const [preferredTimes, setPreferredTimes] = useState<string[]>([]);
   const [serviceDate] = useState<string>(() => getLocalDateISO());
@@ -87,10 +96,34 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
   const selectedServices = useMemo(
     () =>
-      servicesCatalog.filter((service) =>
-        selectedServiceIds.includes(service.id),
-      ),
-    [servicesCatalog, selectedServiceIds],
+      servicesCatalog
+        .filter((service) => selectedServiceIds.includes(service.id))
+        .map((service) => {
+          if (
+            !isDuda &&
+            LAIS_LASH_TYPE_SERVICE_IDS.includes(service.id) &&
+            serviceAttendanceTypes[service.id]
+          ) {
+            return {
+              ...service,
+              name: `${service.name} — ${serviceAttendanceTypes[service.id]}`,
+            };
+          }
+          return service;
+        }),
+    [servicesCatalog, selectedServiceIds, isDuda, serviceAttendanceTypes],
+  );
+
+  const selectedLashServicesNeedingType = useMemo(
+    () =>
+      isDuda
+        ? []
+        : servicesCatalog.filter(
+            (service) =>
+              selectedServiceIds.includes(service.id) &&
+              LAIS_LASH_TYPE_SERVICE_IDS.includes(service.id),
+          ),
+    [isDuda, servicesCatalog, selectedServiceIds],
   );
 
   const selectedReturnMeta = useMemo(
@@ -117,19 +150,57 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
   function toggleService(serviceId: string) {
     setErrorMessage('');
-    setSelectedServiceIds((prev) =>
-      prev.includes(serviceId)
-        ? prev.filter((id) => id !== serviceId)
-        : [...prev, serviceId],
-    );
+    setSelectedServiceIds((prev) => {
+      if (prev.includes(serviceId)) {
+        setServiceAttendanceTypes((types) => {
+          if (!(serviceId in types)) return types;
+          const next = { ...types };
+          delete next[serviceId];
+          return next;
+        });
+        return prev.filter((id) => id !== serviceId);
+      }
+      return [...prev, serviceId];
+    });
+  }
+
+  function handleSelectAttendanceType(
+    serviceId: string,
+    type: LashAttendanceType,
+  ) {
+    setErrorMessage('');
+    setServiceAttendanceTypes((prev) => ({
+      ...prev,
+      [serviceId]: type,
+    }));
+  }
+
+  function handleSelectHasAdditionals(answer: 'yes' | 'no') {
+    setErrorMessage('');
+    setHasAdditionals(answer);
+    if (answer === 'no') {
+      setSelectedAdditionals([]);
+    }
   }
 
   function toggleAdditional(label: string) {
+    setErrorMessage('');
     setSelectedAdditionals((prev) =>
       prev.includes(label)
         ? prev.filter((item) => item !== label)
         : [...prev, label],
     );
+  }
+
+  function handleSelectWantsReturn(answer: 'yes' | 'no') {
+    setErrorMessage('');
+    setWantsToScheduleReturn(answer);
+    if (answer === 'no') {
+      setReturnOption('no_schedule');
+      setPreferredTimes([]);
+    } else if (returnOption === 'no_schedule') {
+      setReturnOption(null);
+    }
   }
 
   function handleSelectReturnOption(option: ReturnOption) {
@@ -152,7 +223,10 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setWhatsapp('');
     setTotalPaidInput('');
     setSelectedServiceIds([]);
+    setServiceAttendanceTypes({});
+    setHasAdditionals(null);
     setSelectedAdditionals([]);
+    setWantsToScheduleReturn(null);
     setReturnOption(null);
     setPreferredTimes([]);
     setErrorMessage('');
@@ -195,6 +269,24 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
       setErrorMessage('Por favor, selecione pelo menos um serviço realizado.');
       return false;
     }
+    for (const lashService of selectedLashServicesNeedingType) {
+      if (!serviceAttendanceTypes[lashService.id]) {
+        setErrorMessage(
+          `Selecione Aplicação ou Manutenção para ${lashService.name}.`,
+        );
+        return false;
+      }
+    }
+    if (isDuda && hasAdditionals === null) {
+      setErrorMessage('Por favor, informe se teve algum adicional.');
+      return false;
+    }
+    if (isDuda && hasAdditionals === 'yes' && selectedAdditionals.length === 0) {
+      setErrorMessage(
+        'Por favor, selecione o adicional ou marque "Não".',
+      );
+      return false;
+    }
     const totalPaid = parseCurrencyInput(totalPaidInput);
     if (totalPaid <= 0) {
       setErrorMessage(
@@ -206,7 +298,14 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   }
 
   function validateStep3(): boolean {
-    if (!returnOption) {
+    if (wantsToScheduleReturn === null) {
+      setErrorMessage('Por favor, informe se deseja agendar o seu retorno.');
+      return false;
+    }
+    if (
+      wantsToScheduleReturn === 'yes' &&
+      (!returnOption || returnOption === 'no_schedule')
+    ) {
       setErrorMessage(
         'Por favor, selecione uma opção para o próximo retorno.',
       );
@@ -214,7 +313,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     }
     if (needsThreeTimes && preferredTimes.length !== 1) {
       setErrorMessage(
-        'Por favor, escolha 1 horário de sua preferência.',
+        'Por favor, escolha o período de sua preferência (Manhã, Tarde ou Noite).',
       );
       return false;
     }
@@ -264,6 +363,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
         whatsapp,
         totalPaid,
         serviceIds: selectedServiceIds,
+        serviceAttendanceTypes: !isDuda ? serviceAttendanceTypes : undefined,
         additionals: isDuda ? selectedAdditionals : [],
         returnOption,
         preferredTimes: needsThreeTimes ? preferredTimes : [],
@@ -349,8 +449,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
               )}
               {confirmation.preferredTimes.length > 0 && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-text-secondary">Horário escolhido</span>
-                  <span className="font-medium text-text-primary tabular-nums">
+                  <span className="text-text-secondary">Período escolhido</span>
+                  <span className="font-medium text-text-primary">
                     {confirmation.preferredTimes[0]}
                   </span>
                 </div>
@@ -508,86 +608,183 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                     Atendimento realizado
                   </h1>
                   <p className="mt-1 text-sm sm:text-base text-text-secondary">
-                    Selecione um ou mais serviços realizados com{' '}
-                    {professionalName}.
+                    {isDuda
+                      ? `Selecione um ou mais serviços realizados com ${professionalName}.`
+                      : 'Quais procedimentos você realizou?'}
                   </p>
                 </div>
 
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   <p className="text-xs text-text-secondary">
                     Os valores exibidos ao lado são apenas informativos.
                   </p>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div
+                    className={
+                      isDuda
+                        ? 'grid grid-cols-1 sm:grid-cols-2 gap-2.5'
+                        : 'space-y-2.5'
+                    }
+                  >
                     {servicesCatalog.map((service) => {
                       const selected = selectedServiceIds.includes(service.id);
+                      const needsType =
+                        !isDuda &&
+                        LAIS_LASH_TYPE_SERVICE_IDS.includes(service.id);
+                      const chosenType =
+                        serviceAttendanceTypes[service.id] ?? null;
+
                       return (
-                        <button
-                          key={service.id}
-                          type="button"
-                          onClick={() => toggleService(service.id)}
-                          aria-pressed={selected}
-                          className={`min-h-[52px] px-4 py-3 rounded-2xl border text-left flex items-center justify-between gap-3 transition-colors ${
-                            selected ? 'choice-selected' : 'choice-idle'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span
-                              className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-                                selected
-                                  ? 'bg-brand-strong border-brand text-surface'
-                                  : 'bg-surface border-border'
-                              }`}
-                            >
-                              {selected && <Check className="w-3.5 h-3.5" />}
+                        <div key={service.id} className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleService(service.id)}
+                            aria-pressed={selected}
+                            className={`w-full min-h-[52px] px-4 py-3 rounded-2xl border text-left flex items-center justify-between gap-3 transition-colors ${
+                              selected ? 'choice-selected' : 'choice-idle'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span
+                                className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                                  selected
+                                    ? 'bg-brand-strong border-brand text-surface'
+                                    : 'bg-surface border-border'
+                                }`}
+                              >
+                                {selected && <Check className="w-3.5 h-3.5" />}
+                              </span>
+                              <span className="text-base font-medium leading-tight">
+                                {service.name}
+                              </span>
+                            </div>
+                            <span className="text-xs sm:text-sm font-semibold tabular-nums shrink-0 text-text-secondary">
+                              {formatBRL(service.price)}
                             </span>
-                            <span className="text-base font-medium leading-tight">
-                              {service.name}
-                            </span>
-                          </div>
-                          <span className="text-xs sm:text-sm font-semibold tabular-nums shrink-0 text-text-secondary">
-                            {formatBRL(service.price)}
-                          </span>
-                        </button>
+                          </button>
+
+                          {needsType && selected && (
+                            <div className="ml-2 sm:ml-4 p-3.5 rounded-2xl bg-brand-soft border border-border space-y-2.5">
+                              <p className="text-sm font-semibold text-text-primary">
+                                Qual tipo de atendimento?
+                              </p>
+                              <div className="grid grid-cols-2 gap-2.5">
+                                {(['Aplicação', 'Manutenção'] as const).map(
+                                  (typeOption) => {
+                                    const active = chosenType === typeOption;
+                                    return (
+                                      <button
+                                        key={typeOption}
+                                        type="button"
+                                        onClick={() =>
+                                          handleSelectAttendanceType(
+                                            service.id,
+                                            typeOption,
+                                          )
+                                        }
+                                        aria-pressed={active}
+                                        className={`min-h-[46px] px-3.5 py-2 rounded-2xl border text-base font-medium flex items-center justify-center gap-2.5 transition-colors ${
+                                          active
+                                            ? 'choice-selected'
+                                            : 'choice-idle'
+                                        }`}
+                                      >
+                                        <span
+                                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                            active
+                                              ? 'border-brand-strong bg-surface'
+                                              : 'border-placeholder bg-surface'
+                                          }`}
+                                        >
+                                          {active && (
+                                            <span className="w-2 h-2 rounded-full bg-brand-strong" />
+                                          )}
+                                        </span>
+                                        <span>{typeOption}</span>
+                                      </button>
+                                    );
+                                  },
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
                 </div>
 
                 {isDuda && (
-                  <div className="space-y-2 pt-1">
-                    <p className="text-sm font-medium text-text-primary">
-                      Adicionais (se houver)
+                  <div className="space-y-3 pt-1">
+                    <p className="text-base font-semibold text-text-primary">
+                      Teve algum adicional?
                     </p>
-                    <div className="flex flex-wrap gap-2">
-                      {DUDA_ADDITIONALS.map((item) => {
-                        const checked = selectedAdditionals.includes(item);
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {(
+                        [
+                          { id: 'yes', label: 'Sim' },
+                          { id: 'no', label: 'Não' },
+                        ] as const
+                      ).map((opt) => {
+                        const active = hasAdditionals === opt.id;
                         return (
                           <button
-                            key={item}
+                            key={opt.id}
                             type="button"
-                            onClick={() => toggleAdditional(item)}
-                            aria-pressed={checked}
-                            className={`min-h-[44px] px-3.5 py-2 rounded-xl border inline-flex items-center gap-2 text-sm transition-colors ${
-                              checked
-                                ? 'choice-selected font-medium'
-                                : 'choice-idle'
+                            onClick={() => handleSelectHasAdditionals(opt.id)}
+                            aria-pressed={active}
+                            className={`min-h-[48px] px-4 py-2.5 rounded-2xl border text-base font-medium flex items-center justify-center gap-2.5 transition-colors ${
+                              active ? 'choice-selected' : 'choice-idle'
                             }`}
                           >
                             <span
-                              className={`w-4 h-4 rounded-sm border flex items-center justify-center shrink-0 ${
-                                checked
-                                  ? 'bg-brand-strong border-brand text-surface'
-                                  : 'bg-surface border-border'
+                              className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                active
+                                  ? 'border-brand-strong bg-surface'
+                                  : 'border-placeholder bg-surface'
                               }`}
                             >
-                              {checked && <Check className="w-3 h-3" />}
+                              {active && (
+                                <span className="w-2 h-2 rounded-full bg-brand-strong" />
+                              )}
                             </span>
-                            <span>{item}</span>
+                            <span>{opt.label}</span>
                           </button>
                         );
                       })}
                     </div>
+
+                    {hasAdditionals === 'yes' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                        {DUDA_ADDITIONALS.map((item) => {
+                          const checked = selectedAdditionals.includes(item);
+                          return (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => toggleAdditional(item)}
+                              aria-pressed={checked}
+                              className={`min-h-[50px] px-4 py-3 rounded-2xl border inline-flex items-center gap-3 text-left text-base transition-colors ${
+                                checked
+                                  ? 'choice-selected font-medium'
+                                  : 'choice-idle'
+                              }`}
+                            >
+                              <span
+                                className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                                  checked
+                                    ? 'bg-brand-strong border-brand text-surface'
+                                    : 'bg-surface border-border'
+                                }`}
+                              >
+                                {checked && <Check className="w-3.5 h-3.5" />}
+                              </span>
+                              <span>{item}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -637,20 +834,25 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                     Próximo retorno
                   </h1>
                   <p className="mt-1 text-sm sm:text-base text-text-secondary">
-                    Deseja deixar sua próxima manutenção pré-agendada?
+                    Deseja agendar o seu retorno?
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {returnOptions.map((opt) => {
-                    const active = returnOption === opt.value;
+                <div className="grid grid-cols-2 gap-2.5">
+                  {(
+                    [
+                      { id: 'yes', label: 'Sim' },
+                      { id: 'no', label: 'Não' },
+                    ] as const
+                  ).map((opt) => {
+                    const active = wantsToScheduleReturn === opt.id;
                     return (
                       <button
-                        key={opt.value}
+                        key={opt.id}
                         type="button"
-                        onClick={() => handleSelectReturnOption(opt.value)}
+                        onClick={() => handleSelectWantsReturn(opt.id)}
                         aria-pressed={active}
-                        className={`min-h-[52px] px-4 py-3 rounded-2xl border text-left text-base font-medium flex items-center gap-3 transition-colors ${
+                        className={`min-h-[52px] px-4 py-3 rounded-2xl border text-base font-semibold flex items-center justify-center gap-2.5 transition-colors ${
                           active ? 'choice-selected' : 'choice-idle'
                         }`}
                       >
@@ -671,73 +873,113 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                   })}
                 </div>
 
-                {calculatedReturnDate && (
-                  <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft border border-border space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <div className="flex items-center gap-2 text-brand-strong">
-                        <Calendar className="w-5 h-5 shrink-0" />
-                        <span className="text-sm font-medium">
-                          Data prevista ({selectedReturnMeta?.days} dias):
-                        </span>
-                      </div>
-                      <div className="sm:text-right">
-                        <div className="text-2xl sm:text-3xl font-bold tracking-tight text-brand-strong tabular-nums">
-                          {formatDateBR(calculatedReturnDate)}
-                        </div>
-                        {wasAdjustedFromSunday && (
-                          <p className="text-xs font-medium text-brand-strong/80 mt-0.5">
-                            Antecipado para sábado (domingo)
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                {wantsToScheduleReturn === 'yes' && (
+                  <div className="space-y-4 pt-1">
+                    <p className="text-sm sm:text-base font-semibold text-text-primary">
+                      Quando deseja fazer sua próxima manutenção?
+                    </p>
 
-                    <div className="pt-3.5 border-t border-border/70 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-sm sm:text-base font-semibold text-red-600">
-                          <Clock className="w-4 h-4 text-red-600 shrink-0" />
-                          <span>Escolha 1 horário de sua preferência</span>
-                        </div>
-                        <span className="text-xs sm:text-sm font-semibold text-brand-strong tabular-nums">
-                          {preferredTimes.length === 1
-                            ? `Selecionado: ${preferredTimes[0]}`
-                            : '0 de 1 selecionado'}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
-                        {TIME_SLOTS.map((slot) => {
-                          const selected = preferredTimes.includes(slot);
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {returnOptions
+                        .filter((opt) => opt.value !== 'no_schedule')
+                        .map((opt) => {
+                          const active = returnOption === opt.value;
                           return (
                             <button
-                              key={slot}
+                              key={opt.value}
                               type="button"
-                              onClick={() => toggleTimeSlot(slot)}
-                              aria-pressed={selected}
-                              className={`min-h-[48px] px-2 py-2.5 rounded-xl border text-sm sm:text-base font-semibold tabular-nums transition-colors ${
-                                selected
-                                  ? 'choice-selected'
-                                  : 'bg-surface border-border text-text-primary hover:border-brand'
+                              onClick={() => handleSelectReturnOption(opt.value)}
+                              aria-pressed={active}
+                              className={`min-h-[52px] px-4 py-3 rounded-2xl border text-left text-base font-medium flex items-center gap-3 transition-colors ${
+                                active ? 'choice-selected' : 'choice-idle'
                               }`}
                             >
-                              {slot}
+                              <span
+                                className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                  active
+                                    ? 'border-brand-strong bg-surface'
+                                    : 'border-placeholder bg-surface'
+                                }`}
+                              >
+                                {active && (
+                                  <span className="w-2 h-2 rounded-full bg-brand-strong" />
+                                )}
+                              </span>
+                              <span>{opt.label}</span>
                             </button>
                           );
                         })}
-                      </div>
-
-                      <p className="text-sm font-semibold text-red-600 leading-relaxed">
-                        {professionalName} verificará a disponibilidade e
-                        confirmará o horário com você pelo WhatsApp.
-                      </p>
                     </div>
-                  </div>
-                )}
 
-                {returnOption === 'to_arrange' && (
-                  <p className="text-sm text-text-secondary bg-background border border-border rounded-2xl px-4 py-3">
-                    Combinaremos o melhor dia com você pelo WhatsApp.
-                  </p>
+                    {calculatedReturnDate && (
+                      <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft border border-border space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div className="flex items-center gap-2 text-brand-strong">
+                            <Calendar className="w-5 h-5 shrink-0" />
+                            <span className="text-sm font-medium">
+                              Data prevista ({selectedReturnMeta?.days} dias):
+                            </span>
+                          </div>
+                          <div className="sm:text-right">
+                            <div className="text-2xl sm:text-3xl font-bold tracking-tight text-brand-strong tabular-nums">
+                              {formatDateBR(calculatedReturnDate)}
+                            </div>
+                            {wasAdjustedFromSunday && (
+                              <p className="text-xs font-medium text-brand-strong/80 mt-0.5">
+                                Antecipado para sábado (domingo)
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="pt-3.5 border-t border-border/70 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 text-sm sm:text-base font-semibold text-red-600">
+                              <Clock className="w-4 h-4 text-red-600 shrink-0" />
+                              <span>Escolha o período de sua preferência</span>
+                            </div>
+                            <span className="text-xs sm:text-sm font-semibold text-brand-strong">
+                              {preferredTimes.length === 1
+                                ? `Selecionado: ${preferredTimes[0]}`
+                                : 'Manhã, Tarde ou Noite'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+                            {TIME_SLOTS.map((slot) => {
+                              const selected = preferredTimes.includes(slot);
+                              return (
+                                <button
+                                  key={slot}
+                                  type="button"
+                                  onClick={() => toggleTimeSlot(slot)}
+                                  aria-pressed={selected}
+                                  className={`min-h-[52px] px-4 py-3 rounded-2xl border text-base font-semibold transition-colors ${
+                                    selected
+                                      ? 'choice-selected'
+                                      : 'bg-surface border-border text-text-primary hover:border-brand'
+                                  }`}
+                                >
+                                  {slot}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <p className="text-sm font-semibold text-red-600 leading-relaxed">
+                            {professionalName} verificará a disponibilidade e
+                            confirmará o horário com você pelo WhatsApp.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {returnOption === 'to_arrange' && (
+                      <p className="text-sm text-text-secondary bg-background border border-border rounded-2xl px-4 py-3">
+                        Combinaremos o melhor dia com você pelo WhatsApp.
+                      </p>
+                    )}
+                  </div>
                 )}
               </section>
             )}
@@ -901,7 +1143,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                   {(calculatedReturnDate || preferredTimes.length > 0) && (
                     <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
                       <dt className="text-text-secondary">
-                        Data e horário escolhido
+                        Data e período escolhido
                       </dt>
                       <dd className="font-semibold text-brand-strong tabular-nums sm:text-right">
                         {calculatedReturnDate

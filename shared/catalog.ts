@@ -71,17 +71,26 @@ export const DUDA_SERVICES: ServiceItem[] = [
 ];
 
 export const DUDA_ADDITIONALS: string[] = [
-  'Decoração encapsulada',
-  'Desenho nas unhas',
-  'Reposição de unha',
+  'Reposição de unha faltando',
+  'Desenho / decoração',
+];
+
+export type LashAttendanceType = 'Aplicação' | 'Manutenção';
+
+export const LAIS_LASH_TYPE_SERVICE_IDS: string[] = [
+  'lais_volume_brasileiro',
+  'lais_volume_brasileiro_express',
+  'lais_5d',
+  'lais_5d_express',
+  'lais_fox',
 ];
 
 export const LAIS_SERVICES: ServiceItem[] = [
-  { id: 'lais_volume_brasileiro', name: 'Volume brasileiro', price: 150 },
-  { id: 'lais_volume_brasileiro_express', name: 'Volume brasileiro express', price: 100 },
+  { id: 'lais_volume_brasileiro', name: 'Volume Brasileiro', price: 150 },
+  { id: 'lais_volume_brasileiro_express', name: 'Volume Brasileiro Expresso', price: 100 },
   { id: 'lais_5d', name: '5D', price: 160 },
+  { id: 'lais_5d_express', name: '5D Expresso', price: 135 },
   { id: 'lais_fox', name: 'Fox', price: 160 },
-  { id: 'lais_5d_express', name: '5D express', price: 135 },
   { id: 'lais_efeito_sirena', name: 'Efeito sirena', price: 135 },
   { id: 'lais_sobrancelha', name: 'Sobrancelha', price: 35 },
   { id: 'lais_henna', name: 'Henna', price: 50 },
@@ -89,20 +98,7 @@ export const LAIS_SERVICES: ServiceItem[] = [
   { id: 'lais_epilacao_facial', name: 'Epilação facial', price: 50 },
 ];
 
-export const TIME_SLOTS: string[] = [
-  '08:00',
-  '09:00',
-  '10:00',
-  '11:00',
-  '12:00',
-  '13:00',
-  '14:00',
-  '15:00',
-  '16:00',
-  '17:00',
-  '18:00',
-  '19:00',
-];
+export const TIME_SLOTS: string[] = ['Manhã', 'Tarde', 'Noite'];
 
 export interface ReturnOptionMeta {
   value: ReturnOption;
