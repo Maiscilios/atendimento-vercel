@@ -408,7 +408,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
               <CheckCircle2 className="w-8 h-8" />
             </div>
 
-            <h1 className="mt-4 font-display text-3xl font-bold text-brand-strong [text-wrap:balance]">
+            <h1 className="mt-4 font-display text-3xl font-semibold text-brand-strong [text-wrap:balance]">
               Atendimento confirmado!
             </h1>
             <p className="mt-2 text-sm sm:text-base text-text-secondary">
@@ -536,7 +536,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
             {step === 1 && (
               <section className="space-y-5">
                 <div>
-                  <h1 className="font-display text-3xl sm:text-4xl font-bold text-brand-strong [text-wrap:balance]">
+                  <h1 className="font-display text-3xl sm:text-4xl font-semibold text-brand-strong [text-wrap:balance]">
                     Dados da cliente
                   </h1>
                   <p className="mt-1 text-sm sm:text-base text-text-secondary">
@@ -604,10 +604,10 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
             {step === 2 && (
               <section className="space-y-5">
                 <div>
-                  <h1 className="font-display text-3xl sm:text-4xl font-bold text-brand-strong [text-wrap:balance]">
+                  <h1 className="font-display text-3xl sm:text-4xl font-semibold text-brand-strong [text-wrap:balance]">
                     Atendimento realizado
                   </h1>
-                  <p className="mt-1 text-sm sm:text-base text-text-secondary">
+                  <p className="mt-1 text-sm sm:text-base text-text-secondary leading-relaxed">
                     {isDuda
                       ? `Selecione um ou mais serviços realizados com ${professionalName}.`
                       : 'Quais procedimentos você realizou?'}
@@ -615,7 +615,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                 </div>
 
                 <div className="space-y-3">
-                  <p className="text-xs text-text-secondary">
+                  <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
                     Os valores exibidos ao lado são apenas informativos.
                   </p>
 
@@ -830,10 +830,10 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
             {step === 3 && (
               <section className="space-y-5">
                 <div>
-                  <h1 className="font-display text-3xl sm:text-4xl font-bold text-brand-strong [text-wrap:balance]">
+                  <h1 className="font-display text-3xl sm:text-4xl font-semibold text-brand-strong [text-wrap:balance]">
                     Próximo retorno
                   </h1>
-                  <p className="mt-1 text-sm sm:text-base text-text-secondary">
+                  <p className="mt-1 text-sm sm:text-base text-text-secondary leading-relaxed">
                     Deseja agendar o seu retorno?
                   </p>
                 </div>
@@ -988,10 +988,10 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
             {step === 4 && (
               <section className="space-y-5">
                 <div>
-                  <h1 className="font-display text-3xl sm:text-4xl font-bold text-brand-strong [text-wrap:balance]">
+                  <h1 className="font-display text-3xl sm:text-4xl font-semibold text-brand-strong [text-wrap:balance]">
                     Confirmar atendimento
                   </h1>
-                  <p className="mt-1 text-sm sm:text-base text-text-secondary">
+                  <p className="mt-1 text-sm sm:text-base text-text-secondary leading-relaxed">
                     Confira os dados do seu atendimento com {professionalName}.
                   </p>
                 </div>

@@ -36,10 +36,10 @@ export function HomeScreen({
       <main className="flex-1 flex flex-col justify-center px-4 sm:px-8 py-8 sm:py-12 bg-[#dd57a5]">
         <div className="w-full max-w-5xl mx-auto bg-[#dd57a5] p-7 sm:p-12 md:p-16 flex flex-col justify-center">
           <div className="text-center">
-            <h1 className="font-['Times_New_Roman',Times,serif] text-[50px] text-left font-bold text-[#ffffff] [text-wrap:balance]">
+            <h1 className="font-display text-4xl sm:text-[50px] leading-[1.12] text-left font-semibold text-[#ffffff] [text-wrap:balance]">
               Confirme seu atendimento
             </h1>
-            <p className="mt-2 text-base sm:text-lg text-[#000000] font-bold">
+            <p className="mt-3 text-base sm:text-lg text-[#000000] font-semibold tracking-tight">
               Com quem foi realizado seu atendimento?
             </p>
 
@@ -50,10 +50,10 @@ export function HomeScreen({
                 className="group min-h-[112px] sm:min-h-[140px] px-7 py-6 rounded-2xl active:scale-[0.99] flex items-center justify-between transition-all professional-card professional-card-featured"
               >
                 <div className="text-left">
-                  <span className="block text-2xl sm:text-3xl font-bold tracking-wide">
+                  <span className="block font-display text-2xl sm:text-3xl font-bold tracking-wide">
                     LAÍS
                   </span>
-                  <span className="block text-sm sm:text-base text-text-secondary mt-1">
+                  <span className="block text-sm sm:text-base font-medium text-text-secondary mt-1">
                     Cílios e sobrancelhas
                   </span>
                 </div>
@@ -66,10 +66,10 @@ export function HomeScreen({
                 className="group min-h-[112px] sm:min-h-[140px] px-7 py-6 rounded-2xl active:scale-[0.99] flex items-center justify-between transition-all professional-card"
               >
                 <div className="text-left">
-                  <span className="block text-2xl sm:text-3xl font-bold tracking-wide">
+                  <span className="block font-display text-2xl sm:text-3xl font-bold tracking-wide">
                     DUDA
                   </span>
-                  <span className="block text-sm sm:text-base text-text-secondary mt-1">
+                  <span className="block text-sm sm:text-base font-medium text-text-secondary mt-1">
                     Unhas e cuidados
                   </span>
                 </div>
