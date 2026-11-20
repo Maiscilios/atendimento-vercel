@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import {
+  AlertCircle,
   ArrowLeft,
   ArrowRight,
   Calendar,
@@ -755,12 +756,25 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                 {/* Valor total pago em destaque e editável diretamente */}
                 <div
                   onClick={() => totalEditRef.current?.focus()}
-                  className="p-5 rounded-2xl bg-brand-soft border border-border space-y-2 cursor-text"
+                  className="p-5 sm:p-6 rounded-2xl bg-brand-soft border-2 border-red-400 shadow-sm space-y-3 cursor-text"
                 >
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-start gap-2.5 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5">
+                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="text-sm sm:text-base font-bold text-red-600 leading-snug">
+                        Atenção: confira se o valor abaixo está correto
+                      </p>
+                      <p className="text-xs sm:text-sm font-medium text-red-600/90 leading-snug">
+                        Considere o valor total pago (com sinal e adicionais). Se
+                        precisar corrigir, toque no valor.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
                     <label
                       htmlFor="attendanceform-final-total"
-                      className="text-sm font-semibold text-text-secondary"
+                      className="text-sm font-bold text-brand-strong uppercase tracking-wide"
                     >
                       Valor total pago
                     </label>
@@ -777,8 +791,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                       <span>Toque para editar</span>
                     </button>
                   </div>
-                  <div className="flex items-baseline gap-2 bg-surface border border-border rounded-xl px-4 py-3 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/25">
-                    <span className="text-2xl sm:text-3xl font-bold text-brand-strong select-none">
+                  <div className="flex items-baseline gap-2.5 bg-surface border-2 border-brand/40 rounded-xl px-4 py-3.5 focus-within:border-brand-strong focus-within:ring-2 focus-within:ring-brand/25">
+                    <span className="text-2xl sm:text-3xl font-extrabold text-brand-strong select-none">
                       R$
                     </span>
                     <input
@@ -795,7 +809,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                         setErrorMessage('');
                       }}
                       placeholder="0,00"
-                      className="w-full bg-transparent text-3xl sm:text-4xl font-bold text-brand-strong tabular-nums focus:outline-none placeholder:text-placeholder"
+                      className="w-full bg-transparent text-4xl sm:text-5xl font-extrabold text-brand-strong tabular-nums focus:outline-none placeholder:text-placeholder"
                     />
                   </div>
                 </div>
