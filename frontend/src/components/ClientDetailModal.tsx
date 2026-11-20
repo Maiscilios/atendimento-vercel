@@ -2,6 +2,7 @@ import { Calendar, MessageCircle, X } from 'lucide-react';
 import {
   buildWhatsAppLink,
   formatBRL,
+  formatBrazilTimeBR,
   formatDateBR,
   getReturnOptionLabel,
   getReturnStatusLabel,
@@ -75,7 +76,10 @@ export function ClientDetailModal({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-xs font-semibold text-brand-strong">
                   <Calendar className="w-3.5 h-3.5" />
-                  <span className="tabular-nums">{formatDateBR(att.serviceDate)}</span>
+                  <span className="tabular-nums">
+                    {formatDateBR(att.serviceDate)} às{' '}
+                    {formatBrazilTimeBR(att.createdAt)}
+                  </span>
                   {showProfessionalBadge && (
                     <>
                       <span aria-hidden="true">·</span>

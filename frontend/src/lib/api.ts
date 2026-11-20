@@ -128,6 +128,7 @@ export interface SubmissionConfirmation {
   professional: Professional;
   clientName: string;
   serviceDate: string;
+  createdAt?: string;
   returnOption: ReturnOption;
   returnDate: string | null;
   preferredTimes: string[];

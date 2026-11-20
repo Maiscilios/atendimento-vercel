@@ -172,11 +172,40 @@ export function addDaysToISO(isoDate: string, days: number): string {
   return getLocalDateISO(dt);
 }
 
+export function calculateReturnDateISO(serviceDate: string, days: number): string {
+  const parts = serviceDate.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
+    return serviceDate;
+  }
+  const [year, month, day] = parts;
+  const dt = new Date(Date.UTC(year, month - 1, day + days));
+  if (dt.getUTCDay() === 0) {
+    dt.setUTCDate(dt.getUTCDate() - 1);
+  }
+  const outYear = dt.getUTCFullYear();
+  const outMonth = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const outDay = String(dt.getUTCDate()).padStart(2, '0');
+  return `${outYear}-${outMonth}-${outDay}`;
+}
+
 export function formatDateBR(isoDate: string | null): string {
   if (!isoDate) return '—';
   const parts = isoDate.split('-');
   if (parts.length !== 3) return isoDate;
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+export function formatBrazilTimeBR(
+  isoTimestamp: string | null | undefined,
+): string {
+  if (!isoTimestamp) return '—';
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
 export function formatBRL(value: number): string {

@@ -10,6 +10,7 @@ import {
   LAIS_RETURN_OPTIONS,
   TIME_SLOTS,
   addDaysToISO,
+  calculateReturnDateISO,
   extractDigits,
   formatBrazilPhone,
   getBrazilTodayISO,
@@ -619,13 +620,15 @@ export function createApiApp() {
 
       const returnDays = returnOptionMeta.days;
       const returnDate =
-        returnDays !== null ? addDaysToISO(serviceDate, returnDays) : null;
+        returnDays !== null
+          ? calculateReturnDateISO(serviceDate, returnDays)
+          : null;
 
       let preferredTimes: string[] = [];
       if (returnDays !== null) {
         if (!Array.isArray(body.preferredTimes)) {
           res.status(400).json({
-            error: 'Escolha exatamente 3 horários de sua preferência.',
+            error: 'Escolha de 1 a 3 horários de sua preferência.',
           });
           return;
         }
@@ -639,9 +642,9 @@ export function createApiApp() {
             uniqueTimes.push(slot);
           }
         }
-        if (uniqueTimes.length !== 3) {
+        if (uniqueTimes.length < 1 || uniqueTimes.length > 3) {
           res.status(400).json({
-            error: 'Escolha exatamente 3 horários de sua preferência.',
+            error: 'Escolha de 1 a 3 horários de sua preferência.',
           });
           return;
         }
@@ -686,6 +689,7 @@ export function createApiApp() {
           professional: record.professional,
           clientName: record.clientName,
           serviceDate: record.serviceDate,
+          createdAt: record.createdAt,
           returnOption: record.returnOption,
           returnDate: record.returnDate,
           preferredTimes: record.preferredTimes,

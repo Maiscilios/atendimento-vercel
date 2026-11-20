@@ -23,6 +23,7 @@ import {
   addDaysToISO,
   buildWhatsAppLink,
   formatBRL,
+  formatBrazilTimeBR,
   formatDateBR,
   getBrazilTodayISO,
   getLocalDateISO,
@@ -359,9 +360,17 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                       className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-background"
                     >
                       <div className="space-y-1 min-w-0">
-                        <h3 className="text-base font-semibold text-text-primary">
-                          {item.clientName}
-                        </h3>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-semibold text-text-primary">
+                            {item.clientName}
+                          </h3>
+                          <span aria-hidden="true" className="text-border">
+                            ·
+                          </span>
+                          <span className="text-xs text-text-secondary tabular-nums">
+                            {formatBrazilTimeBR(item.createdAt)}
+                          </span>
+                        </div>
                         <p className="text-sm text-text-secondary">
                           {item.services.map((s) => s.name).join(' · ')}
                           {item.additionals.length > 0 && (
@@ -766,7 +775,12 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                       className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                     >
                       <div>
-                        <p className="font-semibold text-text-primary">{item.clientName}</p>
+                        <p className="font-semibold text-text-primary">
+                          {item.clientName}{' '}
+                          <span className="text-xs font-normal text-text-secondary tabular-nums">
+                            · {formatBrazilTimeBR(item.createdAt)}
+                          </span>
+                        </p>
                         <p className="text-sm text-text-secondary">
                           {item.services.map((s) => s.name).join(' · ')}
                         </p>

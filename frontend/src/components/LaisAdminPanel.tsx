@@ -28,6 +28,7 @@ import {
   addDaysToISO,
   buildWhatsAppLink,
   formatBRL,
+  formatBrazilTimeBR,
   formatDateBR,
   getBrazilTodayISO,
   getLocalDateISO,
@@ -578,6 +579,12 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                           <h3 className="text-base font-semibold text-text-primary">
                             {item.clientName}
                           </h3>
+                          <span aria-hidden="true" className="text-border">
+                            ·
+                          </span>
+                          <span className="text-xs text-text-secondary tabular-nums">
+                            {formatBrazilTimeBR(item.createdAt)}
+                          </span>
                         </div>
                         <p className="text-sm text-text-secondary">
                           {item.services.map((s) => s.name).join(' · ')}
@@ -1086,7 +1093,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               ·
                             </span>
                             <span className="text-xs text-text-secondary tabular-nums">
-                              {formatDateBR(item.serviceDate)}
+                              {formatDateBR(item.serviceDate)} ·{' '}
+                              {formatBrazilTimeBR(item.createdAt)}
                             </span>
                           </div>
 
@@ -1432,7 +1440,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                           {dudaPeriodAttendances.map((item) => (
                             <tr key={item.id} className="hover:bg-background">
                               <td className="py-3 px-4 text-text-secondary tabular-nums whitespace-nowrap">
-                                {formatDateBR(item.serviceDate)}
+                                {formatDateBR(item.serviceDate)} ·{' '}
+                                {formatBrazilTimeBR(item.createdAt)}
                               </td>
                               <td className="py-3 px-4 font-medium text-text-primary">
                                 {item.clientName}

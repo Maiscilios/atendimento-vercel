@@ -14,8 +14,10 @@ import {
   LAIS_RETURN_OPTIONS,
   TIME_SLOTS,
   addDaysToISO,
+  calculateReturnDateISO,
   formatBRL,
   formatBrazilPhone,
+  formatBrazilTimeBR,
   formatDateBR,
   getLocalDateISO,
   getReturnOptionLabel,
@@ -96,7 +98,15 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
   const calculatedReturnDate = useMemo(() => {
     if (!selectedReturnMeta || selectedReturnMeta.days === null) return null;
-    return addDaysToISO(serviceDate, selectedReturnMeta.days);
+    return calculateReturnDateISO(serviceDate, selectedReturnMeta.days);
+  }, [selectedReturnMeta, serviceDate]);
+
+  const wasAdjustedFromSunday = useMemo(() => {
+    if (!selectedReturnMeta || selectedReturnMeta.days === null) return false;
+    return (
+      calculateReturnDateISO(serviceDate, selectedReturnMeta.days) !==
+      addDaysToISO(serviceDate, selectedReturnMeta.days)
+    );
   }, [selectedReturnMeta, serviceDate]);
 
   const needsThreeTimes = Boolean(
@@ -208,9 +218,9 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
       );
       return false;
     }
-    if (needsThreeTimes && preferredTimes.length !== 3) {
+    if (needsThreeTimes && preferredTimes.length < 1) {
       setErrorMessage(
-        'Por favor, escolha exatamente 3 horários de sua preferência.',
+        'Por favor, escolha de 1 a 3 horários de sua preferência.',
       );
       return false;
     }
@@ -321,9 +331,12 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
             <div className="mt-6 p-4 rounded-2xl bg-background border border-border text-left space-y-2.5 text-sm">
               <div className="flex justify-between gap-3">
-                <span className="text-text-secondary">Data do atendimento</span>
+                <span className="text-text-secondary">Data e hora do registro</span>
                 <span className="font-medium text-text-primary tabular-nums">
                   {formatDateBR(confirmation.serviceDate)}
+                  {confirmation.createdAt
+                    ? ` às ${formatBrazilTimeBR(confirmation.createdAt)}`
+                    : ''}
                 </span>
               </div>
               <div className="flex justify-between gap-3">
@@ -673,8 +686,15 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                           Data prevista ({selectedReturnMeta?.days} dias):
                         </span>
                       </div>
-                      <div className="text-2xl sm:text-3xl font-bold tracking-tight text-brand-strong tabular-nums">
-                        {formatDateBR(calculatedReturnDate)}
+                      <div className="sm:text-right">
+                        <div className="text-2xl sm:text-3xl font-bold tracking-tight text-brand-strong tabular-nums">
+                          {formatDateBR(calculatedReturnDate)}
+                        </div>
+                        {wasAdjustedFromSunday && (
+                          <p className="text-xs font-medium text-brand-strong/80 mt-0.5">
+                            Antecipado para sábado (domingo)
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -682,10 +702,10 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-sm sm:text-base font-semibold text-red-600">
                           <Clock className="w-4 h-4 text-red-600 shrink-0" />
-                          <span>Escolha 3 horários de sua preferência</span>
+                          <span>Escolha de 1 a 3 horários de sua preferência</span>
                         </div>
                         <span className="text-xs sm:text-sm font-semibold text-brand-strong tabular-nums">
-                          {preferredTimes.length} de 3 selecionados
+                          {preferredTimes.length} de até 3 selecionados
                         </span>
                       </div>
 
