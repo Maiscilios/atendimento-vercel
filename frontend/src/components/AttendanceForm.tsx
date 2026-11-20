@@ -6,7 +6,6 @@ import {
   Calendar,
   Check,
   CheckCircle2,
-  Clock,
   Pencil,
 } from 'lucide-react';
 import {
@@ -14,7 +13,6 @@ import {
   DUDA_RETURN_OPTIONS,
   LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
-  TIME_SLOTS,
   addDaysToISO,
   calculateReturnDateISO,
   formatBRL,
@@ -79,7 +77,6 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     'yes' | 'no' | null
   >(null);
   const [returnOption, setReturnOption] = useState<ReturnOption | null>(null);
-  const [preferredTimes, setPreferredTimes] = useState<string[]>([]);
   const [serviceDate] = useState<string>(() => getLocalDateISO());
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() =>
@@ -144,10 +141,6 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     );
   }, [selectedReturnMeta, serviceDate]);
 
-  const needsThreeTimes = Boolean(
-    selectedReturnMeta && selectedReturnMeta.days !== null,
-  );
-
   function toggleService(serviceId: string) {
     setErrorMessage('');
     setSelectedServiceIds((prev) => {
@@ -197,7 +190,6 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setWantsToScheduleReturn(answer);
     if (answer === 'no') {
       setReturnOption('no_schedule');
-      setPreferredTimes([]);
     } else if (returnOption === 'no_schedule') {
       setReturnOption(null);
     }
@@ -206,15 +198,6 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   function handleSelectReturnOption(option: ReturnOption) {
     setErrorMessage('');
     setReturnOption(option);
-    const meta = returnOptions.find((item) => item.value === option);
-    if (!meta || meta.days === null) {
-      setPreferredTimes([]);
-    }
-  }
-
-  function toggleTimeSlot(slot: string) {
-    setErrorMessage('');
-    setPreferredTimes((prev) => (prev.includes(slot) ? [] : [slot]));
   }
 
   function resetForm() {
@@ -228,7 +211,6 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setSelectedAdditionals([]);
     setWantsToScheduleReturn(null);
     setReturnOption(null);
-    setPreferredTimes([]);
     setErrorMessage('');
     setConfirmation(null);
     setIdempotencyKey(generateIdempotencyKey());
@@ -299,7 +281,11 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
   function validateStep3(): boolean {
     if (wantsToScheduleReturn === null) {
-      setErrorMessage('Por favor, informe se deseja agendar o seu retorno.');
+      setErrorMessage(
+        isDuda
+          ? 'Por favor, informe se deseja agendar sua próxima manutenção.'
+          : 'Por favor, informe se deseja agendar o seu retorno.',
+      );
       return false;
     }
     if (
@@ -308,12 +294,6 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     ) {
       setErrorMessage(
         'Por favor, selecione uma opção para o próximo retorno.',
-      );
-      return false;
-    }
-    if (needsThreeTimes && preferredTimes.length !== 1) {
-      setErrorMessage(
-        'Por favor, escolha o período de sua preferência (Manhã, Tarde ou Noite).',
       );
       return false;
     }
@@ -366,7 +346,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
         serviceAttendanceTypes: !isDuda ? serviceAttendanceTypes : undefined,
         additionals: isDuda ? selectedAdditionals : [],
         returnOption,
-        preferredTimes: needsThreeTimes ? preferredTimes : [],
+        preferredTimes: [],
         serviceDate,
         idempotencyKey,
       });
@@ -436,7 +416,10 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
               <div className="flex justify-between gap-3">
                 <span className="text-text-secondary">Próxima manutenção</span>
                 <span className="font-medium text-text-primary">
-                  {getReturnOptionLabel(confirmation.returnOption)}
+                  {getReturnOptionLabel(
+                    confirmation.returnOption,
+                    confirmation.professional,
+                  )}
                 </span>
               </div>
               {confirmation.returnDate && (
@@ -828,13 +811,15 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
             {/* ETAPA 3 — Próximo retorno */}
             {step === 3 && (
-              <section className="space-y-5">
+              <section className="space-y-4">
                 <div>
                   <h1 className="font-display text-3xl sm:text-4xl font-semibold text-brand-strong [text-wrap:balance]">
                     Próximo retorno
                   </h1>
-                  <p className="mt-1 text-sm sm:text-base text-text-secondary leading-relaxed">
-                    Deseja agendar o seu retorno?
+                  <p className="mt-1 text-sm sm:text-base font-medium text-text-secondary leading-relaxed">
+                    {isDuda
+                      ? 'Deseja agendar sua próxima manutenção?'
+                      : 'Deseja agendar o seu retorno?'}
                   </p>
                 </div>
 
@@ -874,7 +859,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                 </div>
 
                 {wantsToScheduleReturn === 'yes' && (
-                  <div className="space-y-4 pt-1">
+                  <div className="space-y-3.5 pt-1">
                     <p className="text-sm sm:text-base font-semibold text-text-primary">
                       Quando deseja fazer sua próxima manutenção?
                     </p>
@@ -912,11 +897,11 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                     </div>
 
                     {calculatedReturnDate && (
-                      <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft border border-border space-y-4">
+                      <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft border-2 border-brand/45 shadow-sm space-y-3">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                           <div className="flex items-center gap-2 text-brand-strong">
                             <Calendar className="w-5 h-5 shrink-0" />
-                            <span className="text-sm font-medium">
+                            <span className="text-sm sm:text-base font-semibold">
                               Data prevista ({selectedReturnMeta?.days} dias):
                             </span>
                           </div>
@@ -932,53 +917,30 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                           </div>
                         </div>
 
-                        <div className="pt-3.5 border-t border-border/70 space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 text-sm sm:text-base font-semibold text-red-600">
-                              <Clock className="w-4 h-4 text-red-600 shrink-0" />
-                              <span>Escolha o período de sua preferência</span>
-                            </div>
-                            <span className="text-xs sm:text-sm font-semibold text-brand-strong">
-                              {preferredTimes.length === 1
-                                ? `Selecionado: ${preferredTimes[0]}`
-                                : 'Manhã, Tarde ou Noite'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
-                            {TIME_SLOTS.map((slot) => {
-                              const selected = preferredTimes.includes(slot);
-                              return (
-                                <button
-                                  key={slot}
-                                  type="button"
-                                  onClick={() => toggleTimeSlot(slot)}
-                                  aria-pressed={selected}
-                                  className={`min-h-[52px] px-4 py-3 rounded-2xl border text-base font-semibold transition-colors ${
-                                    selected
-                                      ? 'choice-selected'
-                                      : 'bg-surface border-border text-text-primary hover:border-brand'
-                                  }`}
-                                >
-                                  {slot}
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          <p className="text-sm font-semibold text-red-600 leading-relaxed">
-                            {professionalName} verificará a disponibilidade e
-                            confirmará o horário com você pelo WhatsApp.
-                          </p>
-                        </div>
+                        <p className="pt-3 border-t border-border/80 text-sm sm:text-base font-medium text-brand-strong leading-relaxed">
+                          {isDuda
+                            ? 'A Duda consultará a disponibilidade para o dia escolhido e entrará em contato para definir o melhor horário. 🩷'
+                            : `${professionalName} verificará a disponibilidade e confirmará o horário com você pelo WhatsApp.`}
+                        </p>
                       </div>
                     )}
 
-                    {returnOption === 'to_arrange' && (
-                      <p className="text-sm text-text-secondary bg-background border border-border rounded-2xl px-4 py-3">
-                        Combinaremos o melhor dia com você pelo WhatsApp.
-                      </p>
-                    )}
+                    {returnOption === 'to_arrange' &&
+                      (isDuda ? (
+                        <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft border-2 border-brand/45 shadow-sm space-y-1.5">
+                          <p className="text-base font-bold text-brand-strong">
+                            Vamos combinar pelo WhatsApp! 🩷
+                          </p>
+                          <p className="text-sm sm:text-base text-text-primary leading-relaxed">
+                            A Duda entrará em contato com você para escolher o
+                            melhor dia e horário para sua próxima manutenção.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-secondary bg-background border border-border rounded-2xl px-4 py-3">
+                          Combinaremos o melhor dia com você pelo WhatsApp.
+                        </p>
+                      ))}
                   </div>
                 )}
               </section>
@@ -1136,23 +1098,19 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                       Próximo retorno solicitado
                     </dt>
                     <dd className="font-semibold text-text-primary sm:text-right">
-                      {returnOption ? getReturnOptionLabel(returnOption) : '—'}
+                      {returnOption
+                        ? getReturnOptionLabel(returnOption, professional)
+                        : '—'}
                     </dd>
                   </div>
 
-                  {(calculatedReturnDate || preferredTimes.length > 0) && (
+                  {calculatedReturnDate && (
                     <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
                       <dt className="text-text-secondary">
-                        Data e período escolhido
+                        Data prevista de retorno
                       </dt>
                       <dd className="font-semibold text-brand-strong tabular-nums sm:text-right">
-                        {calculatedReturnDate
-                          ? formatDateBR(calculatedReturnDate)
-                          : ''}
-                        {calculatedReturnDate && preferredTimes.length > 0
-                          ? ' · '
-                          : ''}
-                        {preferredTimes.join(' · ')}
+                        {formatDateBR(calculatedReturnDate)}
                       </dd>
                     </div>
                   )}

@@ -110,7 +110,7 @@ export const DUDA_RETURN_OPTIONS: ReturnOptionMeta[] = [
   { value: '15_days', label: '15 dias', days: 15 },
   { value: '20_days', label: '20 dias', days: 20 },
   { value: '25_days', label: '25 dias', days: 25 },
-  { value: 'to_arrange', label: 'Dia a combinar', days: null },
+  { value: 'to_arrange', label: 'Prefiro combinar outra data', days: null },
   { value: 'no_schedule', label: 'Não desejo agendar no momento', days: null },
 ];
 
@@ -125,8 +125,13 @@ export function getServicesCatalog(professional: Professional): ServiceItem[] {
   return professional === 'duda' ? DUDA_SERVICES : LAIS_SERVICES;
 }
 
-export function getReturnOptionLabel(option: ReturnOption): string {
-  const found = DUDA_RETURN_OPTIONS.find((item) => item.value === option);
+export function getReturnOptionLabel(
+  option: ReturnOption,
+  professional?: Professional,
+): string {
+  const list =
+    professional === 'lais' ? LAIS_RETURN_OPTIONS : DUDA_RETURN_OPTIONS;
+  const found = list.find((item) => item.value === option);
   return found ? found.label : option;
 }
 

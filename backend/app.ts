@@ -637,13 +637,7 @@ export function createApiApp() {
           : null;
 
       let preferredTimes: string[] = [];
-      if (returnDays !== null) {
-        if (!Array.isArray(body.preferredTimes)) {
-          res.status(400).json({
-            error: 'Escolha o período de sua preferência (Manhã, Tarde ou Noite).',
-          });
-          return;
-        }
+      if (returnDays !== null && Array.isArray(body.preferredTimes)) {
         const uniqueTimes: string[] = [];
         for (const slot of body.preferredTimes) {
           if (
@@ -654,13 +648,7 @@ export function createApiApp() {
             uniqueTimes.push(slot);
           }
         }
-        if (uniqueTimes.length !== 1) {
-          res.status(400).json({
-            error: 'Escolha o período de sua preferência (Manhã, Tarde ou Noite).',
-          });
-          return;
-        }
-        preferredTimes = uniqueTimes;
+        preferredTimes = uniqueTimes.slice(0, 1);
       }
 
       const returnStatus =
