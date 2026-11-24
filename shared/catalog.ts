@@ -43,8 +43,16 @@ export interface AttendanceRecord {
   returnDate: string | null;
   preferredTimes: string[];
   returnStatus: ReturnStatus;
+  extraReturnServices?: ExtraReturnService[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ExtraReturnService {
+  id: string;
+  name: string;
+  price: number;
+  professional: Professional;
 }
 
 export interface ClientSummary {
@@ -124,6 +132,20 @@ export const LAIS_RETURN_OPTIONS: ReturnOptionMeta[] = [
 
 export function getServicesCatalog(professional: Professional): ServiceItem[] {
   return professional === 'duda' ? DUDA_SERVICES : LAIS_SERVICES;
+}
+
+export function findStudioServiceById(
+  serviceId: string,
+): ExtraReturnService | null {
+  const laisMatch = LAIS_SERVICES.find((item) => item.id === serviceId);
+  if (laisMatch) {
+    return { ...laisMatch, professional: 'lais' };
+  }
+  const dudaMatch = DUDA_SERVICES.find((item) => item.id === serviceId);
+  if (dudaMatch) {
+    return { ...dudaMatch, professional: 'duda' };
+  }
+  return null;
 }
 
 export function getReturnOptionLabel(

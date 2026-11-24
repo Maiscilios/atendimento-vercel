@@ -12,6 +12,7 @@ import {
   addDaysToISO,
   calculateReturnDateISO,
   extractDigits,
+  findStudioServiceById,
   formatBrazilPhone,
   getBrazilTodayISO,
   getServicesCatalog,
@@ -20,6 +21,7 @@ import {
 import type {
   AttendanceRecord,
   AuthUser,
+  ExtraReturnService,
   Professional,
   ReturnOption,
   ServiceItem,
@@ -29,15 +31,21 @@ import type {
   DailyMetricPoint,
   PanelClientSummary,
   PayoutStatus,
+  ReturnRequestStatus,
 } from '../shared/panelTypes.ts';
 import {
+  approveReturnRequest,
   cancelAgendaAppointment,
   confirmAttendanceReturnToAgenda,
   createAgendaAppointment,
   deleteAgendaAppointment,
   findConfirmedSlotOwner,
   getAgendaAppointmentById,
+  getReturnRequestById,
   listAgendaAppointments,
+  listReturnRequests,
+  listStudioNotifications,
+  markStudioNotificationsRead,
   updateAgendaAppointment,
   initializeDatabase,
   configureInitialPassword,
@@ -526,6 +534,7 @@ export function createApiApp() {
         serviceIds?: unknown;
         serviceAttendanceTypes?: unknown;
         additionals?: unknown;
+        extraReturnServiceIds?: unknown;
         returnOption?: unknown;
         preferredTimes?: unknown;
         serviceDate?: unknown;
@@ -684,6 +693,22 @@ export function createApiApp() {
       const returnStatus =
         returnOptionMeta.value === 'no_schedule' ? 'not_applicable' : 'waiting';
 
+      const extraReturnServices: ExtraReturnService[] = [];
+      if (
+        returnOptionMeta.value !== 'no_schedule' &&
+        Array.isArray(body.extraReturnServiceIds)
+      ) {
+        const seenExtraIds = new Set<string>();
+        for (const rawId of body.extraReturnServiceIds) {
+          if (typeof rawId !== 'string' || seenExtraIds.has(rawId)) continue;
+          const foundExtra = findStudioServiceById(rawId);
+          if (foundExtra) {
+            seenExtraIds.add(rawId);
+            extraReturnServices.push(foundExtra);
+          }
+        }
+      }
+
       const commissionRate = professional === 'duda' ? 0.25 : 0;
       const commissionAmount =
         professional === 'duda' ? roundMoney(totalPaid * 0.25) : 0;
@@ -703,6 +728,7 @@ export function createApiApp() {
         serviceDate,
         services: selectedServices,
         additionals: selectedAdditionals,
+        extraReturnServices,
         totalPaid,
         commissionRate,
         commissionAmount,
@@ -725,6 +751,7 @@ export function createApiApp() {
           returnDate: record.returnDate,
           preferredTimes: record.preferredTimes,
           returnStatus: record.returnStatus,
+          extraReturnServices: record.extraReturnServices ?? [],
         },
       });
     }),
@@ -1443,6 +1470,10 @@ export function createApiApp() {
         res.json({ appointment });
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
+        if (msg.startsWith('CONFLICT:')) {
+          res.status(409).json({ error: msg.replace('CONFLICT:', '') });
+          return;
+        }
         if (isAgendaUniqueViolation(err)) {
           res
             .status(409)
@@ -1480,6 +1511,123 @@ export function createApiApp() {
         return;
       }
       await deleteAgendaAppointment(existing.id);
+      res.json({ ok: true });
+    }),
+  );
+
+  app.get(
+    '/api/duda/return-requests',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const statusParam = req.query.status;
+      const status: ReturnRequestStatus | undefined =
+        statusParam === 'waiting' ||
+        statusParam === 'pending_partner' ||
+        statusParam === 'confirmed'
+          ? statusParam
+          : undefined;
+      const search =
+        typeof req.query.search === 'string' ? req.query.search : undefined;
+      const requests = await listReturnRequests({
+        professional: 'duda',
+        status,
+        search,
+      });
+      res.json({ requests });
+    }),
+  );
+
+  app.post(
+    '/api/duda/return-requests/:id/approve',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const body = req.body as {
+        appointmentDate?: unknown;
+        appointmentTime?: unknown;
+        procedureName?: unknown;
+        notes?: unknown;
+      };
+
+      if (!isValidISODate(body.appointmentDate)) {
+        res
+          .status(400)
+          .json({ error: 'Informe uma data válida para o agendamento.' });
+        return;
+      }
+      if (!isValidManualTime(body.appointmentTime)) {
+        res.status(400).json({
+          error: 'Digite o horário definitivo no formato HH:MM (ex: 14:30).',
+        });
+        return;
+      }
+      if (
+        typeof body.procedureName !== 'string' ||
+        body.procedureName.trim().length < 2
+      ) {
+        res
+          .status(400)
+          .json({ error: 'Selecione pelo menos um procedimento da Duda.' });
+        return;
+      }
+
+      const notes =
+        typeof body.notes === 'string' ? body.notes.trim().slice(0, 500) : '';
+
+      try {
+        const result = await approveReturnRequest({
+          returnRequestId: req.params.id,
+          expectedProfessional: 'duda',
+          appointmentDate: body.appointmentDate,
+          appointmentTime: body.appointmentTime,
+          procedureName: body.procedureName.trim().slice(0, 200),
+          notes,
+        });
+        res.status(result.status === 'confirmed' ? 201 : 200).json(result);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Erro ao aprovar agendamento.';
+        if (message.startsWith('NOT_FOUND:')) {
+          res.status(404).json({ error: message.replace('NOT_FOUND:', '') });
+          return;
+        }
+        if (message.startsWith('FORBIDDEN:')) {
+          res.status(403).json({ error: message.replace('FORBIDDEN:', '') });
+          return;
+        }
+        if (message.startsWith('BAD_REQUEST:')) {
+          res.status(400).json({ error: message.replace('BAD_REQUEST:', '') });
+          return;
+        }
+        if (message.startsWith('CONFLICT:') || isAgendaUniqueViolation(err)) {
+          res.status(409).json({
+            error: message.startsWith('CONFLICT:')
+              ? message.replace('CONFLICT:', '')
+              : 'Já existe um agendamento confirmado para este dia e horário.',
+          });
+          return;
+        }
+        throw err;
+      }
+    }),
+  );
+
+  app.get(
+    '/api/duda/notifications',
+    requireAuth,
+    asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+      const notifications = await listStudioNotifications('duda');
+      res.json({ notifications });
+    }),
+  );
+
+  app.post(
+    '/api/duda/notifications/read',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const body = req.body as { id?: unknown } | undefined;
+      const notificationId =
+        body && typeof body.id === 'string' ? body.id : undefined;
+      await markStudioNotificationsRead('duda', notificationId);
       res.json({ ok: true });
     }),
   );
@@ -1789,6 +1937,10 @@ export function createApiApp() {
         res.json({ appointment });
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
+        if (msg.startsWith('CONFLICT:')) {
+          res.status(409).json({ error: msg.replace('CONFLICT:', '') });
+          return;
+        }
         if (isAgendaUniqueViolation(err)) {
           res
             .status(409)
@@ -1825,6 +1977,139 @@ export function createApiApp() {
         res.status(404).json({ error: 'Agendamento não encontrado.' });
         return;
       }
+      res.json({ ok: true });
+    }),
+  );
+
+  app.get(
+    '/api/admin/return-requests',
+    requireAdmin,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const profParam = req.query.professional;
+      const professional: Professional | undefined =
+        profParam === 'lais' || profParam === 'duda' ? profParam : undefined;
+      const statusParam = req.query.status;
+      const status: ReturnRequestStatus | undefined =
+        statusParam === 'waiting' ||
+        statusParam === 'pending_partner' ||
+        statusParam === 'confirmed'
+          ? statusParam
+          : undefined;
+      const search =
+        typeof req.query.search === 'string' ? req.query.search : undefined;
+      const requests = await listReturnRequests({
+        professional,
+        status,
+        search,
+      });
+      res.json({ requests });
+    }),
+  );
+
+  app.post(
+    '/api/admin/return-requests/:id/approve',
+    requireAdmin,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const body = req.body as {
+        appointmentDate?: unknown;
+        appointmentTime?: unknown;
+        procedureName?: unknown;
+        notes?: unknown;
+      };
+
+      if (!isValidISODate(body.appointmentDate)) {
+        res
+          .status(400)
+          .json({ error: 'Informe uma data válida para o agendamento.' });
+        return;
+      }
+      if (!isValidManualTime(body.appointmentTime)) {
+        res.status(400).json({
+          error: 'Digite o horário definitivo no formato HH:MM (ex: 14:30).',
+        });
+        return;
+      }
+      if (
+        typeof body.procedureName !== 'string' ||
+        body.procedureName.trim().length < 2
+      ) {
+        res.status(400).json({ error: 'Selecione ou informe o procedimento.' });
+        return;
+      }
+
+      const targetReq = await getReturnRequestById(req.params.id);
+      if (!targetReq) {
+        res
+          .status(404)
+          .json({ error: 'Solicitação de retorno não encontrada.' });
+        return;
+      }
+      if (targetReq.isJoint && targetReq.professional !== 'lais') {
+        res.status(403).json({
+          error:
+            'No agendamento conjunto, a parte da Duda precisa ser aprovada pela Duda no painel dela.',
+        });
+        return;
+      }
+
+      const notes =
+        typeof body.notes === 'string' ? body.notes.trim().slice(0, 500) : '';
+
+      try {
+        const result = await approveReturnRequest({
+          returnRequestId: req.params.id,
+          expectedProfessional: targetReq.isJoint ? 'lais' : undefined,
+          appointmentDate: body.appointmentDate,
+          appointmentTime: body.appointmentTime,
+          procedureName: body.procedureName.trim().slice(0, 200),
+          notes,
+        });
+        res.status(result.status === 'confirmed' ? 201 : 200).json(result);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Erro ao aprovar agendamento.';
+        if (message.startsWith('NOT_FOUND:')) {
+          res.status(404).json({ error: message.replace('NOT_FOUND:', '') });
+          return;
+        }
+        if (message.startsWith('FORBIDDEN:')) {
+          res.status(403).json({ error: message.replace('FORBIDDEN:', '') });
+          return;
+        }
+        if (message.startsWith('BAD_REQUEST:')) {
+          res.status(400).json({ error: message.replace('BAD_REQUEST:', '') });
+          return;
+        }
+        if (message.startsWith('CONFLICT:') || isAgendaUniqueViolation(err)) {
+          res.status(409).json({
+            error: message.startsWith('CONFLICT:')
+              ? message.replace('CONFLICT:', '')
+              : 'Já existe um agendamento confirmado para este dia e horário.',
+          });
+          return;
+        }
+        throw err;
+      }
+    }),
+  );
+
+  app.get(
+    '/api/admin/notifications',
+    requireAdmin,
+    asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+      const notifications = await listStudioNotifications('lais');
+      res.json({ notifications });
+    }),
+  );
+
+  app.post(
+    '/api/admin/notifications/read',
+    requireAdmin,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const body = req.body as { id?: unknown } | undefined;
+      const notificationId =
+        body && typeof body.id === 'string' ? body.id : undefined;
+      await markStudioNotificationsRead('lais', notificationId);
       res.json({ ok: true });
     }),
   );

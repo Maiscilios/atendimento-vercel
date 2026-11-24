@@ -9,8 +9,13 @@ import {
   type AttendanceRecord,
   type Professional,
 } from '../../../shared/catalog';
-import type { AgendaAppointment } from '../../../shared/panelTypes';
+import type {
+  AgendaAppointment,
+  ReturnRequest,
+} from '../../../shared/panelTypes';
 import {
+  approveAdminReturnRequest,
+  approveDudaReturnRequest,
   confirmAdminAgendaRequest,
   confirmDudaAgendaRequest,
   createAdminAgendaAppointment,
@@ -29,15 +34,17 @@ export type AgendaBookingModalState =
       initialWhatsapp?: string;
     }
   | { kind: 'edit'; appointment: AgendaAppointment }
-  | { kind: 'confirm-request'; request: AttendanceRecord };
+  | { kind: 'confirm-request'; request: AttendanceRecord }
+  | { kind: 'confirm-return-request'; request: ReturnRequest };
 
 interface AgendaBookingModalProps {
   state: AgendaBookingModalState;
   isAdmin: boolean;
   onClose: () => void;
   onSaved: (result: {
-    appointment: AgendaAppointment;
+    appointment: AgendaAppointment | null;
     updatedAttendance?: AttendanceRecord;
+    updatedRequest?: ReturnRequest;
     message: string;
   }) => void;
 }
@@ -73,9 +80,14 @@ export function AgendaBookingModal({
       ? state.professional
       : state.kind === 'edit'
         ? state.appointment.professional
-        : state.kind === 'confirm-request'
+        : state.kind === 'confirm-request' ||
+            state.kind === 'confirm-return-request'
           ? state.request.professional
           : 'duda';
+
+  const isReadOnlyClient =
+    state.kind === 'confirm-request' ||
+    state.kind === 'confirm-return-request';
 
   const catalog = getServicesCatalog(activeProfessional);
 
@@ -132,6 +144,26 @@ export function AgendaBookingModal({
         .filter((name) => !catalogNames.has(name));
       setSelectedServiceNames(matched);
       setCustomProcedure(unmatched.join(', '));
+    } else if (state.kind === 'confirm-return-request') {
+      const req = state.request;
+      setClientName(req.clientName);
+      setWhatsapp(req.whatsapp);
+      setAppointmentDate(
+        req.partner?.proposedDate ||
+          req.proposedDate ||
+          req.returnDate ||
+          getBrazilTodayISO(),
+      );
+      setAppointmentTime(req.partner?.proposedTime || req.proposedTime || '');
+      setNotes('');
+
+      const catalogNames = new Set(
+        getServicesCatalog(req.professional).map((s) => s.name),
+      );
+      const matched = req.procedures.filter((name) => catalogNames.has(name));
+      const unmatched = req.procedures.filter((name) => !catalogNames.has(name));
+      setSelectedServiceNames(matched);
+      setCustomProcedure(unmatched.join(', '));
     }
   }, [state]);
 
@@ -156,7 +188,7 @@ export function AgendaBookingModal({
     e.preventDefault();
     setError('');
 
-    if (state.kind !== 'confirm-request') {
+    if (!isReadOnlyClient) {
       if (clientName.trim().length < 2) {
         setError('Informe o nome completo da cliente.');
         return;
@@ -186,7 +218,36 @@ export function AgendaBookingModal({
 
     setSubmitting(true);
     try {
-      if (state.kind === 'confirm-request') {
+      if (state.kind === 'confirm-return-request') {
+        const res = isAdmin
+          ? await approveAdminReturnRequest(state.request.id, {
+              appointmentDate,
+              appointmentTime: normalizedTime,
+              procedureName,
+              notes: notes.trim(),
+            })
+          : await approveDudaReturnRequest(state.request.id, {
+              appointmentDate,
+              appointmentTime: normalizedTime,
+              procedureName,
+              notes: notes.trim(),
+            });
+
+        const partnerLabel =
+          state.request.professional === 'lais' ? 'Duda' : 'Laís';
+        const message =
+          res.status === 'confirmed' && res.appointment
+            ? state.request.isJoint
+              ? `Agendamento conjunto de ${res.appointment.clientName} confirmado nas agendas da Laís e da Duda em ${formatDateBR(res.appointment.appointmentDate)} às ${res.appointment.appointmentTime}.`
+              : `Agendamento de ${res.appointment.clientName} confirmado em ${formatDateBR(res.appointment.appointmentDate)} às ${res.appointment.appointmentTime}.`
+            : `Horário sincronizado (${formatDateBR(appointmentDate)} às ${normalizedTime}) enviado para ${partnerLabel} aprovar.`;
+
+        onSaved({
+          appointment: res.appointment,
+          updatedRequest: res.request,
+          message,
+        });
+      } else if (state.kind === 'confirm-request') {
         const res = isAdmin
           ? await confirmAdminAgendaRequest(state.request.id, {
               appointmentDate,
@@ -254,6 +315,12 @@ export function AgendaBookingModal({
   }
 
   const profLabel = activeProfessional === 'duda' ? 'Duda' : 'Laís';
+  const partnerMatchesCurrentSlot =
+    state.kind === 'confirm-return-request' &&
+    state.request.isJoint &&
+    Boolean(state.request.partner?.approvedByProfessional) &&
+    state.request.partner?.proposedDate === appointmentDate &&
+    state.request.partner?.proposedTime === appointmentTime.trim();
 
   return (
     <div
@@ -266,11 +333,14 @@ export function AgendaBookingModal({
         <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-background">
           <div>
             <h3 id="agenda-booking-title" className="font-display text-2xl font-bold text-brand-strong">
-              {state.kind === 'confirm-request'
-                ? 'Adicionar à agenda'
-                : state.kind === 'edit'
-                  ? 'Editar / Remarcar agendamento'
-                  : 'Novo agendamento'}
+              {state.kind === 'confirm-return-request' && state.request.isJoint
+                ? 'Agendamento conjunto · Sincronizar'
+                : state.kind === 'confirm-request' ||
+                    state.kind === 'confirm-return-request'
+                  ? 'Adicionar à agenda'
+                  : state.kind === 'edit'
+                    ? 'Editar / Remarcar agendamento'
+                    : 'Novo agendamento'}
             </h3>
             <p className="text-xs text-text-secondary">
               Agenda da {profLabel} · Horário de Brasília
@@ -296,13 +366,59 @@ export function AgendaBookingModal({
           {state.kind === 'confirm-request' && (
             <div className="p-3.5 rounded-2xl bg-brand-soft border border-border space-y-1 text-xs text-text-secondary">
               <p className="font-semibold text-brand-strong">
-                Solicitação de retorno ({getReturnOptionLabel(state.request.returnOption)})
+                Solicitação de retorno ({getReturnOptionLabel(state.request.returnOption, state.request.professional)})
               </p>
               {state.request.preferredTimes.length > 0 && (
                 <p className="tabular-nums">
                   Preferências informadas pela cliente:{' '}
                   <strong>{state.request.preferredTimes.join(' · ')}</strong>
                 </p>
+              )}
+            </div>
+          )}
+
+          {state.kind === 'confirm-return-request' && (
+            <div className="p-3.5 rounded-2xl bg-brand-soft border border-brand/40 space-y-1.5 text-xs text-text-secondary">
+              <p className="font-semibold text-brand-strong">
+                {state.request.isJoint
+                  ? 'Agendamento conjunto (Laís + Duda)'
+                  : 'Solicitação de retorno'}{' '}
+                · {getReturnOptionLabel(state.request.returnOption, state.request.professional)}
+              </p>
+              {state.request.returnDate && (
+                <p className="tabular-nums">
+                  Data prevista solicitada:{' '}
+                  <strong className="text-text-primary">
+                    {formatDateBR(state.request.returnDate)}
+                  </strong>
+                </p>
+              )}
+              {state.request.isJoint && state.request.partner && (
+                <div className="pt-1.5 border-t border-border/70 space-y-1">
+                  <p>
+                    Procedimentos da{' '}
+                    <strong>
+                      {state.request.partner.professional === 'lais' ? 'Laís' : 'Duda'}
+                    </strong>
+                    : {state.request.partner.procedures.join(', ')}
+                  </p>
+                  {state.request.partner.approvedByProfessional &&
+                  state.request.partner.proposedDate &&
+                  state.request.partner.proposedTime ? (
+                    <p className="font-semibold text-brand-strong tabular-nums">
+                      Horário sugerido pela{' '}
+                      {state.request.partner.professional === 'lais' ? 'Laís' : 'Duda'}:{' '}
+                      {formatDateBR(state.request.partner.proposedDate)} às{' '}
+                      {state.request.partner.proposedTime}. Confirme este mesmo horário
+                      para gravar nas duas agendas ou ajuste para sugerir outro.
+                    </p>
+                  ) : (
+                    <p>
+                      A confirmação final nas duas agendas ocorrerá após a aprovação da{' '}
+                      {state.request.partner.professional === 'lais' ? 'Laís' : 'Duda'}.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -315,12 +431,12 @@ export function AgendaBookingModal({
               <input
                 type="text"
                 required
-                readOnly={state.kind === 'confirm-request'}
+                readOnly={isReadOnlyClient}
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 placeholder="Nome completo"
                 className={`field-control w-full min-h-[44px] px-3.5 py-2 text-base border rounded-xl ${
-                  state.kind === 'confirm-request' ? 'bg-brand-soft' : 'bg-surface'
+                  isReadOnlyClient ? 'bg-brand-soft' : 'bg-surface'
                 }`} id="agendabookingmodal-field-1"
               />
             </div>
@@ -332,12 +448,12 @@ export function AgendaBookingModal({
               <input
                 type="tel"
                 required
-                readOnly={state.kind === 'confirm-request'}
+                readOnly={isReadOnlyClient}
                 value={whatsapp}
                 onChange={(e) => setWhatsapp(formatBrazilPhone(e.target.value))}
                 placeholder="(00) 00000-0000"
                 className={`field-control w-full min-h-[44px] px-3.5 py-2 text-base border rounded-xl tabular-nums ${
-                  state.kind === 'confirm-request' ? 'bg-brand-soft' : 'bg-surface'
+                  isReadOnlyClient ? 'bg-brand-soft' : 'bg-surface'
                 }`} id="agendabookingmodal-field-2"
               />
             </div>
@@ -449,7 +565,11 @@ export function AgendaBookingModal({
                   ? 'Salvando...'
                   : state.kind === 'edit'
                     ? 'Salvar alterações'
-                    : 'Confirmar e adicionar à agenda'}
+                    : state.kind === 'confirm-return-request' && state.request.isJoint
+                      ? partnerMatchesCurrentSlot
+                        ? 'Aprovar e confirmar nas duas agendas'
+                        : 'Propor horário sincronizado'
+                      : 'Confirmar e adicionar à agenda'}
               </span>
             </button>
           </div>

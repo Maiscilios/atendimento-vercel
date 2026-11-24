@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Bell,
   Calendar,
   CalendarClock,
   CalendarPlus,
@@ -33,7 +34,6 @@ import {
   getBrazilTodayISO,
   getLocalDateISO,
   getReturnOptionLabel,
-  getReturnStatusLabel,
   type AttendanceRecord,
   type AuthUser,
   type Professional,
@@ -43,6 +43,9 @@ import {
   type DailyCommissionSummary,
   type PanelClientSummary,
   type PayoutStatus,
+  type ReturnRequest,
+  type ReturnRequestStatus,
+  type StudioNotification,
 } from '../../../shared/panelTypes';
 import {
   deleteAdminAttendance,
@@ -51,6 +54,9 @@ import {
   fetchAdminCommissions,
   fetchAdminDashboard,
   fetchAdminDudaFinance,
+  fetchAdminNotifications,
+  fetchAdminReturnRequests,
+  markAdminNotificationsRead,
   resetDudaPasswordByAdmin,
   updateAdminCommissionStatus,
 } from '../lib/api';
@@ -106,8 +112,8 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
 
   // Tab 3: Agendamentos & Minha agenda
   const [apptProfFilter, setApptProfFilter] = useState<'all' | Professional>('all');
-  const [apptStatusFilter, setApptStatusFilter] = useState<'all' | 'waiting' | 'confirmed'>('all');
-  const [appointments, setAppointments] = useState<AttendanceRecord[]>([]);
+  const [apptStatusFilter, setApptStatusFilter] = useState<'all' | ReturnRequestStatus>('all');
+  const [appointments, setAppointments] = useState<ReturnRequest[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
   const [agendaBookingState, setAgendaBookingState] = useState<AgendaBookingModalState>({
     kind: 'closed',
@@ -117,6 +123,10 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
   const [agendaFocusProfessional, setAgendaFocusProfessional] = useState<Professional>('lais');
   const [agendaInitialBooking, setAgendaInitialBooking] =
     useState<AgendaInitialBookingRequest | null>(null);
+
+  // Notificações
+  const [notifications, setNotifications] = useState<StudioNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   // Tab 4: Histórico de atendimentos
   const [histProfFilter, setHistProfFilter] = useState<'all' | Professional>('all');
@@ -181,18 +191,26 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
     setAppointmentsLoading(true);
     setError('');
     try {
-      const data = await fetchAdminAttendances({
+      const data = await fetchAdminReturnRequests({
         professional: apptProfFilter,
-        returnStatus: apptStatusFilter !== 'all' ? apptStatusFilter : undefined,
-        onlyReturns: true,
+        status: apptStatusFilter !== 'all' ? apptStatusFilter : undefined,
       });
-      setAppointments(data.attendances);
+      setAppointments(data.requests);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar agendamentos.');
     } finally {
       setAppointmentsLoading(false);
     }
   }, [apptProfFilter, apptStatusFilter]);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const data = await fetchAdminNotifications();
+      setNotifications(data.notifications);
+    } catch {
+      // Non-blocking notification fetch
+    }
+  }, []);
 
   const parsedHistDaysAgo =
     histDaysAgoInput.trim() === '' ? null : Number.parseInt(histDaysAgoInput, 10);
@@ -252,12 +270,33 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
   }, []);
 
   useEffect(() => {
+    void loadNotifications();
+    const timer = window.setInterval(() => {
+      void loadNotifications();
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [loadNotifications]);
+
+  useEffect(() => {
     if (activeTab === 'home') void loadHome();
     else if (activeTab === 'clients') void loadClients();
     else if (activeTab === 'appointments') void loadAppointments();
     else if (activeTab === 'history') void loadHistory();
     else if (activeTab === 'finance') void loadFinance();
   }, [activeTab, loadHome, loadClients, loadAppointments, loadHistory, loadFinance]);
+
+  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
+
+  async function handleMarkNotificationRead(id?: string) {
+    try {
+      await markAdminNotificationsRead(id);
+      setNotifications((prev) =>
+        prev.map((n) => (!id || n.id === id ? { ...n, read: true } : n)),
+      );
+    } catch {
+      // Ignore transient mark-read failures
+    }
+  }
 
   async function handleDeleteAttendance(id: string) {
     setError('');
@@ -328,7 +367,24 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             </span>
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0 relative">
+            <button
+              type="button"
+              onClick={() => {
+                setNotificationsOpen((open) => !open);
+                void loadNotifications();
+              }}
+              aria-label="Notificações"
+              aria-expanded={notificationsOpen}
+              className="min-h-[40px] px-2.5 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap btn-secondary relative"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadNotificationsCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-md bg-brand-strong text-surface text-[10px] font-bold tabular-nums leading-none">
+                  {unreadNotificationsCount}
+                </span>
+              )}
+            </button>
             <button
               type="button"
               onClick={onGoHome}
@@ -355,6 +411,88 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               <LogOut className="w-4 h-4" />
               <span className="hidden sm:inline">Sair</span>
             </button>
+
+            {notificationsOpen && (
+              <div className="absolute right-0 top-12 w-80 sm:w-96 bg-surface border border-border rounded-2xl shadow-dialog z-40 overflow-hidden">
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2 bg-background">
+                  <span className="text-sm font-semibold text-brand-strong">
+                    Notificações da Laís
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {unreadNotificationsCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void handleMarkNotificationRead()}
+                        className="text-xs font-medium text-brand-strong hover:underline"
+                      >
+                        Marcar lidas
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setNotificationsOpen(false)}
+                      aria-label="Fechar notificações"
+                      className="text-text-secondary hover:text-text-primary"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                  {notifications.length === 0 ? (
+                    <p className="p-5 text-center text-xs text-text-secondary">
+                      Nenhuma notificação no momento.
+                    </p>
+                  ) : (
+                    notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className={`p-3.5 space-y-1.5 text-left ${
+                          notif.read ? 'bg-surface' : 'bg-brand-soft/60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-bold text-brand-strong">
+                            {notif.title}
+                          </p>
+                          <span className="text-[10px] text-text-secondary tabular-nums shrink-0">
+                            {formatBrazilTimeBR(notif.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-text-primary leading-relaxed">
+                          {notif.message}
+                        </p>
+                        <div className="flex items-center justify-between pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!notif.read) {
+                                void handleMarkNotificationRead(notif.id);
+                              }
+                              setNotificationsOpen(false);
+                              setActiveTab('appointments');
+                              void loadAppointments();
+                            }}
+                            className="text-xs font-semibold text-brand-strong hover:underline"
+                          >
+                            Ver em Agendamentos
+                          </button>
+                          {!notif.read && (
+                            <button
+                              type="button"
+                              onClick={() => void handleMarkNotificationRead(notif.id)}
+                              className="text-[11px] text-text-secondary hover:underline"
+                            >
+                              Marcar como lida
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -790,11 +928,12 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                   ))}
                 </div>
 
-                <div className="grid grid-cols-3 sm:flex w-full sm:w-auto max-w-full gap-1 p-1 bg-brand-soft rounded-xl">
+                <div className="grid grid-cols-2 sm:flex w-full sm:w-auto max-w-full gap-1 p-1 bg-brand-soft rounded-xl">
                   {(
                     [
                       { id: 'all', label: 'Todos' },
                       { id: 'waiting', label: 'Aguardando confirmação' },
+                      { id: 'pending_partner', label: 'Aguardando parceira' },
                       { id: 'confirmed', label: 'Confirmado' },
                     ] as const
                   ).map((opt) => (
@@ -865,18 +1004,32 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
               ) : (
                 <div className="divide-y divide-border">
                   {appointments.map((item) => {
-                    const isConfirmed = item.returnStatus === 'confirmed';
+                    const isConfirmed = item.status === 'confirmed';
+                    const isPendingPartner = item.status === 'pending_partner';
                     const profName = item.professional === 'lais' ? 'Laís' : 'Duda';
-                    const message = item.returnDate
-                      ? `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vi sua preferência de manutenção com ${profName} para ${formatDateBR(item.returnDate)} (${item.preferredTimes.join(', ')}). Vamos confirmar seu horário?`
+                    const partnerName = item.professional === 'lais' ? 'Duda' : 'Laís';
+                    const targetDate = item.proposedDate || item.returnDate;
+                    const message = targetDate
+                      ? `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vi sua preferência de manutenção com ${profName} para ${formatDateBR(targetDate)}${item.proposedTime ? ` às ${item.proposedTime}` : ''}. Vamos confirmar seu horário?`
                       : `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vamos combinar a data da sua próxima manutenção com ${profName}?`;
+
+                    const statusLabel = isConfirmed
+                      ? 'Confirmado'
+                      : isPendingPartner
+                        ? `Aguardando aprovação da ${partnerName}`
+                        : item.isJoint && item.partner?.approvedByProfessional
+                          ? `Aguardando aprovação da ${profName}`
+                          : 'Aguardando confirmação';
+
+                    const requiresDudaPanelApproval =
+                      item.isJoint && item.professional === 'duda';
 
                     return (
                       <div
                         key={item.id}
                         className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-background"
                       >
-                        <div className="space-y-1.5 min-w-0">
+                        <div className="space-y-2 min-w-0">
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                             <span className="text-xs font-bold uppercase tracking-wider text-brand-strong">
                               {profName}
@@ -889,7 +1042,11 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                             </h3>
                             <span
                               className={`inline-flex items-center gap-1 text-xs font-semibold ${
-                                isConfirmed ? 'text-success' : 'text-warning'
+                                isConfirmed
+                                  ? 'text-success'
+                                  : isPendingPartner
+                                    ? 'text-brand-strong'
+                                    : 'text-warning'
                               }`}
                             >
                               {isConfirmed ? (
@@ -897,17 +1054,28 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               ) : (
                                 <Clock className="w-3.5 h-3.5" />
                               )}
-                              <span>{getReturnStatusLabel(item.returnStatus)}</span>
+                              <span>{statusLabel}</span>
                             </span>
+                            {item.isJoint && (
+                              <span className="px-2 py-0.5 rounded-md bg-brand-soft border border-brand/40 text-[11px] font-bold uppercase tracking-wider text-brand-strong">
+                                Conjunto · Laís + Duda
+                              </span>
+                            )}
                           </div>
 
                           <p className="text-sm text-text-secondary">
-                            Serviço: {item.services.map((s) => s.name).join(', ')}
+                            Procedimentos ({profName}):{' '}
+                            <strong className="text-text-primary">
+                              {item.procedures.join(', ')}
+                            </strong>
                           </p>
 
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-primary">
                             <span>
-                              Prazo: <strong>{getReturnOptionLabel(item.returnOption)}</strong>
+                              Prazo:{' '}
+                              <strong>
+                                {getReturnOptionLabel(item.returnOption, item.professional)}
+                              </strong>
                             </span>
                             {item.returnDate && (
                               <span className="tabular-nums">
@@ -917,13 +1085,36 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                                 </strong>
                               </span>
                             )}
-                            {item.preferredTimes.length > 0 && (
+                            {item.proposedDate && item.proposedTime && (
                               <span className="tabular-nums">
-                                Horários preferidos:{' '}
-                                <strong>{item.preferredTimes.join(' · ')}</strong>
+                                Horário sincronizado:{' '}
+                                <strong className="text-brand-strong">
+                                  {formatDateBR(item.proposedDate)} às {item.proposedTime}
+                                </strong>
                               </span>
                             )}
                           </div>
+
+                          {item.isJoint && item.partner && (
+                            <div className="p-2.5 rounded-xl bg-brand-soft/75 border border-brand/35 text-xs text-text-secondary space-y-0.5">
+                              <p>
+                                <strong className="text-brand-strong">{partnerName}:</strong>{' '}
+                                {item.partner.procedures.join(', ')}
+                              </p>
+                              <p>
+                                Status da {partnerName}:{' '}
+                                <strong className="text-text-primary">
+                                  {item.partner.status === 'confirmed'
+                                    ? 'Confirmado'
+                                    : item.partner.approvedByProfessional &&
+                                        item.partner.proposedDate &&
+                                        item.partner.proposedTime
+                                      ? `Aprovou ${formatDateBR(item.partner.proposedDate)} às ${item.partner.proposedTime}`
+                                      : 'Aguardando aprovação'}
+                                </strong>
+                              </p>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
@@ -942,7 +1133,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               type="button"
                               onClick={() => {
                                 setAgendaFocusProfessional(item.professional);
-                                setAgendaFocusDate(item.returnDate || undefined);
+                                setAgendaFocusDate(targetDate || undefined);
                                 setActiveTab('agenda');
                               }}
                               className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors btn-secondary"
@@ -950,16 +1141,32 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               <Calendar className="w-4 h-4" />
                               <span>Ver na Minha agenda</span>
                             </button>
+                          ) : requiresDudaPanelApproval ? (
+                            <span className="min-h-[42px] px-4 py-2 rounded-xl bg-brand-soft border border-brand/35 text-xs font-semibold text-brand-strong inline-flex items-center">
+                              Aguardando aprovação no painel da Duda
+                            </span>
                           ) : (
                             <button
                               type="button"
                               onClick={() =>
-                                setAgendaBookingState({ kind: 'confirm-request', request: item })
+                                setAgendaBookingState({
+                                  kind: 'confirm-return-request',
+                                  request: item,
+                                })
                               }
                               className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors btn-primary"
                             >
                               <CalendarPlus className="w-4 h-4" />
-                              <span>Adicionar à agenda</span>
+                              <span>
+                                {item.isJoint
+                                  ? item.partner?.approvedByProfessional &&
+                                    !item.approvedByProfessional
+                                    ? 'Aprovar horário conjunto'
+                                    : item.status === 'pending_partner'
+                                      ? 'Alterar horário sugerido'
+                                      : 'Definir horário conjunto'
+                                  : 'Adicionar à agenda'}
+                              </span>
                             </button>
                           )}
                         </div>
@@ -1515,23 +1722,15 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         state={agendaBookingState}
         isAdmin={true}
         onClose={() => setAgendaBookingState({ kind: 'closed' })}
-        onSaved={({ appointment, updatedAttendance, message }) => {
+        onSaved={({ appointment, message }) => {
           setAgendaBookingState({ kind: 'closed' });
-          setAgendaFocusProfessional(appointment.professional);
-          setAgendaFocusDate(appointment.appointmentDate);
-          setAgendaFeedback(message);
-          if (updatedAttendance) {
-            setAppointments((prev) => {
-              const next = prev.map((item) =>
-                item.id === updatedAttendance.id ? updatedAttendance : item
-              );
-              return apptStatusFilter === 'waiting'
-                ? next.filter((item) => item.returnStatus === 'waiting')
-                : next;
-            });
-          } else {
-            void loadAppointments();
+          if (appointment) {
+            setAgendaFocusProfessional(appointment.professional);
+            setAgendaFocusDate(appointment.appointmentDate);
           }
+          setAgendaFeedback(message);
+          void loadAppointments();
+          void loadNotifications();
         }}
       />
     </div>

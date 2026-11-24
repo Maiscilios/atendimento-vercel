@@ -1006,7 +1006,9 @@ export function AgendaCalendarTab({
         onClose={() => setBookingModal({ kind: 'closed' })}
         onSaved={({ appointment, message }) => {
           setBookingModal({ kind: 'closed' });
-          setSelectedDate(appointment.appointmentDate);
+          if (appointment) {
+            setSelectedDate(appointment.appointmentDate);
+          }
           setFeedback(message);
           void loadAgenda();
         }}

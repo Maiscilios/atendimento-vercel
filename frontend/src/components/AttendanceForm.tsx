@@ -8,15 +8,20 @@ import {
   CheckCircle2,
   Loader2,
   Pencil,
+  Plus,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import {
   DUDA_ADDITIONALS,
   DUDA_RETURN_OPTIONS,
+  DUDA_SERVICES,
   LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
+  LAIS_SERVICES,
   addDaysToISO,
   calculateReturnDateISO,
+  findStudioServiceById,
   formatBRL,
   formatBrazilPhone,
   formatBrazilTimeBR,
@@ -26,6 +31,7 @@ import {
   getServicesCatalog,
   normalizeWhatsAppDigits,
   parseCurrencyInput,
+  type ExtraReturnService,
   type LashAttendanceType,
   type Professional,
   type ReturnOption,
@@ -99,6 +105,11 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     'yes' | 'no' | null
   >(null);
   const [returnOption, setReturnOption] = useState<ReturnOption | null>(null);
+  const [showExtraProceduresPicker, setShowExtraProceduresPicker] =
+    useState(false);
+  const [extraReturnServiceIds, setExtraReturnServiceIds] = useState<string[]>(
+    [],
+  );
   const [serviceDate] = useState<string>(() => getLocalDateISO());
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() =>
@@ -251,6 +262,32 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     );
   }, [selectedReturnMeta, serviceDate]);
 
+  const selectedExtraReturnServices = useMemo<ExtraReturnService[]>(
+    () =>
+      extraReturnServiceIds
+        .map((id) => findStudioServiceById(id))
+        .filter((item): item is ExtraReturnService => item !== null),
+    [extraReturnServiceIds],
+  );
+
+  const hasJointReturnBooking = useMemo(
+    () =>
+      wantsToScheduleReturn === 'yes' &&
+      selectedExtraReturnServices.some(
+        (svc) => svc.professional !== professional,
+      ),
+    [wantsToScheduleReturn, selectedExtraReturnServices, professional],
+  );
+
+  function toggleExtraReturnService(serviceId: string) {
+    setErrorMessage('');
+    setExtraReturnServiceIds((prev) =>
+      prev.includes(serviceId)
+        ? prev.filter((id) => id !== serviceId)
+        : [...prev, serviceId],
+    );
+  }
+
   function toggleService(serviceId: string) {
     setErrorMessage('');
     setSelectedServiceIds((prev) => {
@@ -300,6 +337,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setWantsToScheduleReturn(answer);
     if (answer === 'no') {
       setReturnOption('no_schedule');
+      setShowExtraProceduresPicker(false);
+      setExtraReturnServiceIds([]);
     } else if (returnOption === 'no_schedule') {
       setReturnOption(null);
     }
@@ -378,6 +417,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setSelectedAdditionals([]);
     setWantsToScheduleReturn(null);
     setReturnOption(null);
+    setShowExtraProceduresPicker(false);
+    setExtraReturnServiceIds([]);
     setErrorMessage('');
     setConfirmation(null);
     setIdempotencyKey(generateIdempotencyKey());
@@ -545,6 +586,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
         serviceIds: selectedServiceIds,
         serviceAttendanceTypes: !isDuda ? serviceAttendanceTypes : undefined,
         additionals: isDuda ? selectedAdditionals : [],
+        extraReturnServiceIds:
+          returnOption === 'no_schedule' ? [] : extraReturnServiceIds,
         returnOption,
         preferredTimes: [],
         serviceDate,
@@ -638,12 +681,31 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                   </span>
                 </div>
               )}
+              {confirmation.extraReturnServices &&
+                confirmation.extraReturnServices.length > 0 && (
+                  <div className="flex flex-col gap-1 pt-1 border-t border-border">
+                    <span className="text-text-secondary">
+                      Outros procedimentos no retorno
+                    </span>
+                    <span className="font-medium text-text-primary">
+                      {confirmation.extraReturnServices
+                        .map(
+                          (svc) =>
+                            `${svc.name} (${svc.professional === 'lais' ? 'Laís' : 'Duda'})`,
+                        )
+                        .join(' · ')}
+                    </span>
+                  </div>
+                )}
             </div>
 
             {confirmation.returnOption !== 'no_schedule' && (
               <p className="mt-4 text-xs sm:text-sm text-text-secondary">
-                {professionalName} verificará a disponibilidade na agenda e
-                confirmará com você pelo WhatsApp.
+                {confirmation.extraReturnServices?.some(
+                  (svc) => svc.professional !== confirmation.professional,
+                )
+                  ? 'Laís e Duda receberão sua solicitação conjunta para sincronizar os horários e confirmar com você pelo WhatsApp.'
+                  : `${professionalName} verificará a disponibilidade na agenda e confirmará com você pelo WhatsApp.`}
               </p>
             )}
 
@@ -1328,6 +1390,171 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                           Combinaremos o melhor dia com você pelo WhatsApp.
                         </p>
                       ))}
+
+                    {returnOption && returnOption !== 'no_schedule' && (
+                      <div className="space-y-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowExtraProceduresPicker((open) => !open)
+                          }
+                          aria-expanded={showExtraProceduresPicker}
+                          className="w-full min-h-[50px] px-4 py-3 rounded-2xl border-2 border-brand/55 bg-brand-soft text-brand-strong font-semibold text-sm sm:text-base inline-flex items-center justify-center gap-2 hover:bg-brand/15 transition-colors shadow-sm"
+                        >
+                          <Plus className="w-4 h-4 shrink-0" />
+                          <span>+ Adicionar outro procedimento</span>
+                          {selectedExtraReturnServices.length > 0 && (
+                            <span className="text-xs font-bold tabular-nums opacity-85">
+                              ({selectedExtraReturnServices.length})
+                            </span>
+                          )}
+                        </button>
+
+                        {selectedExtraReturnServices.length > 0 && (
+                          <div className="p-3.5 rounded-2xl bg-brand-soft/60 border border-brand/35 space-y-2.5">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-brand-strong">
+                              Procedimentos extras para o retorno
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedExtraReturnServices.map((svc) => (
+                                <button
+                                  key={svc.id}
+                                  type="button"
+                                  onClick={() => toggleExtraReturnService(svc.id)}
+                                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-surface border border-brand/45 text-xs sm:text-sm font-medium text-text-primary inline-flex items-center gap-2 hover:border-brand-strong transition-colors"
+                                >
+                                  <span>
+                                    {svc.name} ·{' '}
+                                    <strong className="text-brand-strong">
+                                      {svc.professional === 'lais' ? 'Laís' : 'Duda'}
+                                    </strong>
+                                  </span>
+                                  <X className="w-3.5 h-3.5 text-brand-strong shrink-0" />
+                                </button>
+                              ))}
+                            </div>
+                            {hasJointReturnBooking && (
+                              <p className="text-xs font-medium text-brand-strong leading-relaxed">
+                                Agendamento conjunto: a solicitação será enviada
+                                para as agendas da Laís e da Duda com horário
+                                sincronizado e aprovação das duas profissionais. 🩷
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {showExtraProceduresPicker && (
+                          <div className="p-4 sm:p-5 rounded-2xl bg-surface border-2 border-brand/35 space-y-4 shadow-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-sm sm:text-base font-semibold text-brand-strong">
+                                  Escolha outros procedimentos do estúdio (opcional)
+                                </p>
+                                <p className="text-xs text-text-secondary">
+                                  Você pode adicionar ou remover serviços da Laís e da Duda.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowExtraProceduresPicker(false)}
+                                aria-label="Fechar lista de procedimentos"
+                                className="min-h-[36px] min-w-[36px] rounded-xl flex items-center justify-center btn-ghost shrink-0"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="space-y-2">
+                                <p className="text-xs font-bold uppercase tracking-wider text-brand-strong">
+                                  Laís · Cílios e Sobrancelhas
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {LAIS_SERVICES.map((svc) => {
+                                    const checked =
+                                      extraReturnServiceIds.includes(svc.id);
+                                    return (
+                                      <button
+                                        key={svc.id}
+                                        type="button"
+                                        onClick={() =>
+                                          toggleExtraReturnService(svc.id)
+                                        }
+                                        aria-pressed={checked}
+                                        className={`min-h-[46px] px-3.5 py-2.5 rounded-2xl border text-left flex items-center justify-between gap-2.5 transition-colors ${
+                                          checked ? 'choice-selected' : 'choice-idle'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <span
+                                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                                              checked
+                                                ? 'bg-brand-strong border-brand text-surface'
+                                                : 'bg-surface border-border'
+                                            }`}
+                                          >
+                                            {checked && <Check className="w-3 h-3" />}
+                                          </span>
+                                          <span className="text-sm font-medium leading-tight">
+                                            {svc.name}
+                                          </span>
+                                        </div>
+                                        <span className="text-xs text-text-secondary tabular-nums shrink-0">
+                                          {formatBRL(svc.price)}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 pt-2 border-t border-border">
+                                <p className="text-xs font-bold uppercase tracking-wider text-brand-strong">
+                                  Duda · Unhas e Cuidados
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {DUDA_SERVICES.map((svc) => {
+                                    const checked =
+                                      extraReturnServiceIds.includes(svc.id);
+                                    return (
+                                      <button
+                                        key={svc.id}
+                                        type="button"
+                                        onClick={() =>
+                                          toggleExtraReturnService(svc.id)
+                                        }
+                                        aria-pressed={checked}
+                                        className={`min-h-[46px] px-3.5 py-2.5 rounded-2xl border text-left flex items-center justify-between gap-2.5 transition-colors ${
+                                          checked ? 'choice-selected' : 'choice-idle'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <span
+                                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                                              checked
+                                                ? 'bg-brand-strong border-brand text-surface'
+                                                : 'bg-surface border-border'
+                                            }`}
+                                          >
+                                            {checked && <Check className="w-3 h-3" />}
+                                          </span>
+                                          <span className="text-sm font-medium leading-tight">
+                                            {svc.name}
+                                          </span>
+                                        </div>
+                                        <span className="text-xs text-text-secondary tabular-nums shrink-0">
+                                          {formatBRL(svc.price)}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -1501,6 +1728,30 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                       </dd>
                     </div>
                   )}
+
+                  {wantsToScheduleReturn === 'yes' &&
+                    selectedExtraReturnServices.length > 0 && (
+                      <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
+                        <dt className="text-text-secondary shrink-0">
+                          Outros procedimentos no retorno
+                        </dt>
+                        <dd className="font-semibold text-text-primary sm:text-right">
+                          <span>
+                            {selectedExtraReturnServices
+                              .map(
+                                (svc) =>
+                                  `${svc.name} (${svc.professional === 'lais' ? 'Laís' : 'Duda'})`,
+                              )
+                              .join(', ')}
+                          </span>
+                          {hasJointReturnBooking && (
+                            <span className="block text-xs font-medium text-brand-strong mt-0.5">
+                              Agendamento conjunto · Laís e Duda
+                            </span>
+                          )}
+                        </dd>
+                      </div>
+                    )}
                 </dl>
               </section>
             )}

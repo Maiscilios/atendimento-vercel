@@ -1,4 +1,9 @@
-import { getBrazilTodayISO, type AttendanceRecord, type Professional } from './catalog';
+import {
+  getBrazilTodayISO,
+  type AttendanceRecord,
+  type Professional,
+  type ReturnOption,
+} from './catalog';
 
 export type PayoutStatus = 'pending' | 'paid';
 
@@ -71,6 +76,7 @@ export interface AgendaAppointment {
   id: string;
   professional: Professional;
   sourceAttendanceId: string | null;
+  jointGroupId?: string | null;
   clientName: string;
   whatsapp: string;
   whatsappDigits: string;
@@ -81,4 +87,52 @@ export interface AgendaAppointment {
   status: AgendaAppointmentStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ReturnRequestStatus = 'waiting' | 'pending_partner' | 'confirmed';
+
+export interface ReturnRequestPartnerSummary {
+  id: string;
+  professional: Professional;
+  procedures: string[];
+  status: ReturnRequestStatus;
+  approvedByProfessional: boolean;
+  proposedDate: string | null;
+  proposedTime: string | null;
+}
+
+export interface ReturnRequest {
+  id: string;
+  sourceAttendanceId: string;
+  clientId: string | null;
+  professional: Professional;
+  clientName: string;
+  whatsapp: string;
+  whatsappDigits: string;
+  serviceDate: string;
+  returnOption: ReturnOption;
+  returnDate: string | null;
+  procedures: string[];
+  isJoint: boolean;
+  jointGroupId: string | null;
+  proposedDate: string | null;
+  proposedTime: string | null;
+  approvedByProfessional: boolean;
+  status: ReturnRequestStatus;
+  appointmentId: string | null;
+  partner: ReturnRequestPartnerSummary | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudioNotification {
+  id: string;
+  recipient: Professional;
+  type: 'return_request' | 'joint_proposed' | 'joint_approved' | 'joint_updated';
+  title: string;
+  message: string;
+  relatedReturnRequestId: string | null;
+  jointGroupId: string | null;
+  read: boolean;
+  createdAt: string;
 }

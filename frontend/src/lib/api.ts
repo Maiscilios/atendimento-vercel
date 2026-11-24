@@ -1,6 +1,7 @@
 import type {
   AttendanceRecord,
   AuthUser,
+  ExtraReturnService,
   LashAttendanceType,
   Professional,
   ReturnOption,
@@ -11,7 +12,10 @@ import type {
   DailyMetricPoint,
   PanelClientSummary,
   PayoutStatus,
+  ReturnRequest,
+  ReturnRequestStatus,
   SetupStatus,
+  StudioNotification,
 } from '../../../shared/panelTypes';
 
 const TOKEN_STORAGE_KEY = 'maiscilios_session_token';
@@ -136,6 +140,7 @@ export interface SubmitAttendancePayload {
   serviceIds: string[];
   serviceAttendanceTypes?: Record<string, LashAttendanceType>;
   additionals: string[];
+  extraReturnServiceIds?: string[];
   returnOption: ReturnOption;
   preferredTimes: string[];
   serviceDate: string;
@@ -152,6 +157,7 @@ export interface SubmissionConfirmation {
   returnDate: string | null;
   preferredTimes: string[];
   returnStatus: string;
+  extraReturnServices?: ExtraReturnService[];
 }
 
 export async function submitAttendance(
@@ -320,6 +326,58 @@ export async function cancelDudaAgendaAppointment(id: string): Promise<AgendaApp
 export async function deleteDudaAgendaAppointment(id: string): Promise<void> {
   await apiFetch<{ ok: boolean }>(`/api/duda/agenda/appointments/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+  });
+}
+
+export interface ApproveReturnRequestPayload {
+  appointmentDate: string;
+  appointmentTime: string;
+  procedureName: string;
+  notes?: string;
+}
+
+export interface ApproveReturnRequestResponse {
+  status: ReturnRequestStatus;
+  request: ReturnRequest;
+  appointment: AgendaAppointment | null;
+}
+
+export async function fetchDudaReturnRequests(params?: {
+  status?: ReturnRequestStatus;
+  search?: string;
+}): Promise<{ requests: ReturnRequest[] }> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (params?.search) query.set('search', params.search);
+  const qs = query.toString();
+  return apiFetch<{ requests: ReturnRequest[] }>(
+    `/api/duda/return-requests${qs ? `?${qs}` : ''}`
+  );
+}
+
+export async function approveDudaReturnRequest(
+  returnRequestId: string,
+  payload: ApproveReturnRequestPayload
+): Promise<ApproveReturnRequestResponse> {
+  return apiFetch<ApproveReturnRequestResponse>(
+    `/api/duda/return-requests/${encodeURIComponent(returnRequestId)}/approve`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function fetchDudaNotifications(): Promise<{
+  notifications: StudioNotification[];
+}> {
+  return apiFetch<{ notifications: StudioNotification[] }>('/api/duda/notifications');
+}
+
+export async function markDudaNotificationsRead(id?: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>('/api/duda/notifications/read', {
+    method: 'POST',
+    body: JSON.stringify(id ? { id } : {}),
   });
 }
 
@@ -522,5 +580,48 @@ export async function cancelAdminAgendaAppointment(id: string): Promise<AgendaAp
 export async function deleteAdminAgendaAppointment(id: string): Promise<void> {
   await apiFetch<{ ok: boolean }>(`/api/admin/agenda/appointments/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+  });
+}
+
+export async function fetchAdminReturnRequests(params?: {
+  professional?: Professional | 'all';
+  status?: ReturnRequestStatus;
+  search?: string;
+}): Promise<{ requests: ReturnRequest[] }> {
+  const query = new URLSearchParams();
+  if (params?.professional && params.professional !== 'all') {
+    query.set('professional', params.professional);
+  }
+  if (params?.status) query.set('status', params.status);
+  if (params?.search) query.set('search', params.search);
+  const qs = query.toString();
+  return apiFetch<{ requests: ReturnRequest[] }>(
+    `/api/admin/return-requests${qs ? `?${qs}` : ''}`
+  );
+}
+
+export async function approveAdminReturnRequest(
+  returnRequestId: string,
+  payload: ApproveReturnRequestPayload
+): Promise<ApproveReturnRequestResponse> {
+  return apiFetch<ApproveReturnRequestResponse>(
+    `/api/admin/return-requests/${encodeURIComponent(returnRequestId)}/approve`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function fetchAdminNotifications(): Promise<{
+  notifications: StudioNotification[];
+}> {
+  return apiFetch<{ notifications: StudioNotification[] }>('/api/admin/notifications');
+}
+
+export async function markAdminNotificationsRead(id?: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>('/api/admin/notifications/read', {
+    method: 'POST',
+    body: JSON.stringify(id ? { id } : {}),
   });
 }
