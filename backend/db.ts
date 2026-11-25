@@ -1,9 +1,11 @@
 import crypto from 'node:crypto';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { getDatabase, isDatabaseConfigured } from './database.ts';
+import { publishNotificationEvent } from './notificationsBus.ts';
 import {
   formatBrazilPhone,
   formatDateBR,
+  getBrazilTodayISO,
   normalizeWhatsAppDigits,
   type AttendanceRecord,
   type AuthUser,
@@ -11,17 +13,22 @@ import {
   type Professional,
   type ReturnOption,
   type ReturnStatus,
+  type ServiceCategoryId,
   type ServiceItem,
   type UserRole,
 } from '../shared/catalog.ts';
 import type {
   AgendaAppointment,
   AgendaAppointmentStatus,
+  InterestedLead,
+  InterestedLeadService,
   PayoutStatus,
+  PushSubscriptionInfo,
   ReturnRequest,
   ReturnRequestStatus,
   SetupStatus,
   StudioNotification,
+  StudioNotificationType,
 } from '../shared/panelTypes.ts';
 
 const SCHEMA = `
@@ -142,15 +149,19 @@ const SCHEMA = `
 
   CREATE TABLE IF NOT EXISTS return_requests (
     id TEXT PRIMARY KEY,
-    source_attendance_id TEXT NOT NULL REFERENCES attendances(id) ON DELETE CASCADE,
+    source_attendance_id TEXT REFERENCES attendances(id) ON DELETE CASCADE,
     client_id TEXT REFERENCES clients(id) ON DELETE SET NULL,
     professional TEXT NOT NULL CHECK(professional IN ('lais', 'duda')),
     client_name TEXT NOT NULL,
     whatsapp TEXT NOT NULL,
     whatsapp_digits TEXT NOT NULL,
     service_date TEXT NOT NULL,
-    return_option TEXT NOT NULL CHECK(return_option IN ('15_days', '20_days', '25_days', 'to_arrange', 'no_schedule')),
+    return_option TEXT NOT NULL CHECK(return_option IN ('15_days', '20_days', '25_days', 'to_arrange', 'specific_date', 'no_schedule')),
     return_date TEXT,
+    desired_time TEXT,
+    source TEXT NOT NULL DEFAULT 'attendance_form',
+    notes TEXT NOT NULL DEFAULT '',
+    idempotency_key TEXT,
     procedures_json TEXT NOT NULL,
     is_joint INTEGER NOT NULL DEFAULT 0 CHECK(is_joint IN (0, 1)),
     joint_group_id TEXT,
@@ -163,8 +174,23 @@ const SCHEMA = `
     updated_at TEXT NOT NULL
   );
 
+  ALTER TABLE return_requests ALTER COLUMN source_attendance_id DROP NOT NULL;
+  ALTER TABLE return_requests DROP CONSTRAINT IF EXISTS return_requests_return_option_check;
+  ALTER TABLE return_requests ADD CONSTRAINT return_requests_return_option_check
+    CHECK(return_option IN ('15_days', '20_days', '25_days', 'to_arrange', 'specific_date', 'no_schedule'));
+  ALTER TABLE return_requests ADD COLUMN IF NOT EXISTS desired_time TEXT;
+  ALTER TABLE return_requests ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'attendance_form';
+  ALTER TABLE return_requests ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+  ALTER TABLE return_requests ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+  DROP INDEX IF EXISTS idx_return_requests_source_prof;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_return_requests_source_prof
-    ON return_requests(source_attendance_id, professional);
+    ON return_requests(source_attendance_id, professional)
+    WHERE source_attendance_id IS NOT NULL;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_return_requests_idempotency_prof
+    ON return_requests(idempotency_key, professional)
+    WHERE idempotency_key IS NOT NULL;
 
   CREATE INDEX IF NOT EXISTS idx_return_requests_prof_status
     ON return_requests(professional, status, created_at DESC);
@@ -173,6 +199,26 @@ const SCHEMA = `
     ON return_requests(joint_group_id)
     WHERE joint_group_id IS NOT NULL;
 
+  CREATE TABLE IF NOT EXISTS interested_leads (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    whatsapp TEXT NOT NULL,
+    whatsapp_digits TEXT NOT NULL,
+    interested_services_json TEXT NOT NULL,
+    service_categories_json TEXT NOT NULL,
+    accepts_promotions INTEGER NOT NULL CHECK(accepts_promotions IN (0, 1)),
+    idempotency_key TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_interested_leads_idempotency
+    ON interested_leads(idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+
+  CREATE INDEX IF NOT EXISTS idx_interested_leads_created
+    ON interested_leads(created_at DESC);
+
   CREATE TABLE IF NOT EXISTS studio_notifications (
     id TEXT PRIMARY KEY,
     recipient TEXT NOT NULL CHECK(recipient IN ('lais', 'duda')),
@@ -180,13 +226,43 @@ const SCHEMA = `
     title TEXT NOT NULL,
     message TEXT NOT NULL,
     related_return_request_id TEXT,
+    related_appointment_id TEXT,
     joint_group_id TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
     is_read INTEGER NOT NULL DEFAULT 0 CHECK(is_read IN (0, 1)),
     created_at TEXT NOT NULL
   );
 
+  ALTER TABLE studio_notifications ADD COLUMN IF NOT EXISTS related_appointment_id TEXT;
+  ALTER TABLE studio_notifications ADD COLUMN IF NOT EXISTS metadata_json TEXT NOT NULL DEFAULT '{}';
+
   CREATE INDEX IF NOT EXISTS idx_studio_notifications_recipient
     ON studio_notifications(recipient, is_read, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    professional TEXT NOT NULL CHECK(professional IN ('lais', 'duda')),
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    device_label TEXT NOT NULL DEFAULT 'Dispositivo',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_success_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_push_subscriptions_prof
+    ON push_subscriptions(professional);
+
+  CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user
+    ON push_subscriptions(user_id);
 `;
 
 interface DbUserRow {
@@ -241,7 +317,7 @@ interface DbClientRow {
 
 interface DbReturnRequestRow {
   id: string;
-  source_attendance_id: string;
+  source_attendance_id: string | null;
   client_id: string | null;
   professional: Professional;
   client_name: string;
@@ -250,6 +326,9 @@ interface DbReturnRequestRow {
   service_date: string;
   return_option: ReturnOption;
   return_date: string | null;
+  desired_time?: string | null;
+  source?: 'attendance_form' | 'public_link';
+  notes?: string | null;
   procedures_json: string;
   is_joint: number;
   joint_group_id: string | null;
@@ -262,6 +341,19 @@ interface DbReturnRequestRow {
   updated_at: string;
 }
 
+interface MemoryPushSubscription {
+  id: string;
+  userId: string;
+  professional: Professional;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  deviceLabel: string;
+  createdAt: string;
+  updatedAt: string;
+  lastSuccessAt: string | null;
+}
+
 const memorySessions = new Map<
   string,
   { token: string; user_id: string; expires_at: string; created_at: string }
@@ -272,7 +364,12 @@ const memoryAttendanceIdempotency = new Map<string, string>();
 const memoryCommissionPayouts = new Map<string, DbCommissionPayoutRow>();
 const memoryAgendaAppointments = new Map<string, AgendaAppointment>();
 const memoryReturnRequests = new Map<string, ReturnRequest>();
+const memoryPreBookingIdempotency = new Map<string, ReturnRequest[]>();
+const memoryInterestedLeads = new Map<string, InterestedLead>();
+const memoryInterestedIdempotency = new Map<string, InterestedLead>();
 const memoryNotifications = new Map<string, StudioNotification>();
+const memoryAppSettings = new Map<string, string>();
+const memoryPushSubscriptions = new Map<string, MemoryPushSubscription>();
 
 export function normalizeClientName(name: string): string {
   return name
@@ -811,6 +908,7 @@ export interface InsertAttendanceInput {
   preferredTimes: string[];
   returnStatus: ReturnStatus;
   idempotencyKey?: string | null;
+  source?: 'attendance_form' | 'public_link';
 }
 
 function buildGroupedReturnProcedures(
@@ -833,48 +931,151 @@ function buildGroupedReturnProcedures(
   return byProf;
 }
 
-function addMemoryNotification(
-  input: Omit<StudioNotification, 'id' | 'read' | 'createdAt'> & {
-    createdAt?: string;
-  },
-): StudioNotification {
+type NotificationMetadataPayload = {
+  requestTypeLabel?: string;
+  clientName?: string;
+  procedures?: string[];
+  desiredDate?: string | null;
+  desiredTime?: string | null;
+  isJoint?: boolean;
+  targetTab?: 'appointments' | 'agenda';
+  targetDate?: string | null;
+  targetProfessional?: Professional | null;
+};
+
+type CreateNotificationInput = Omit<StudioNotification, 'id' | 'read' | 'createdAt'> & {
+  createdAt?: string;
+};
+
+function buildNotificationMetadata(input: CreateNotificationInput): NotificationMetadataPayload {
+  return {
+    requestTypeLabel: input.requestTypeLabel,
+    clientName: input.clientName,
+    procedures: input.procedures,
+    desiredDate: input.desiredDate ?? null,
+    desiredTime: input.desiredTime ?? null,
+    isJoint: Boolean(input.isJoint),
+    targetTab: input.targetTab ?? 'appointments',
+    targetDate: input.targetDate ?? null,
+    targetProfessional: input.targetProfessional ?? input.recipient,
+  };
+}
+
+function addMemoryNotification(input: CreateNotificationInput): StudioNotification {
   const item: StudioNotification = {
     id: crypto.randomUUID(),
     recipient: input.recipient,
     type: input.type,
     title: input.title,
     message: input.message,
+    requestTypeLabel: input.requestTypeLabel,
+    clientName: input.clientName,
+    procedures: input.procedures,
+    desiredDate: input.desiredDate ?? null,
+    desiredTime: input.desiredTime ?? null,
+    isJoint: Boolean(input.isJoint),
     relatedReturnRequestId: input.relatedReturnRequestId,
+    relatedAppointmentId: input.relatedAppointmentId ?? null,
     jointGroupId: input.jointGroupId,
+    targetTab: input.targetTab ?? 'appointments',
+    targetDate: input.targetDate ?? null,
+    targetProfessional: input.targetProfessional ?? input.recipient,
     read: false,
     createdAt: input.createdAt ?? new Date().toISOString(),
   };
   memoryNotifications.set(item.id, item);
+  publishNotificationEvent(item);
   return item;
 }
 
 async function insertDbNotification(
   client: PoolClient,
-  input: Omit<StudioNotification, 'id' | 'read' | 'createdAt'> & {
-    createdAt?: string;
-  },
-): Promise<void> {
+  input: CreateNotificationInput,
+  pendingPublish?: StudioNotification[],
+): Promise<StudioNotification> {
+  const id = crypto.randomUUID();
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const metadata = buildNotificationMetadata(input);
   await execute(
     `INSERT INTO studio_notifications (
-      id, recipient, type, title, message, related_return_request_id, joint_group_id, is_read, created_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8)`,
+      id, recipient, type, title, message, related_return_request_id, related_appointment_id,
+      joint_group_id, metadata_json, is_read, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10)`,
     [
-      crypto.randomUUID(),
+      id,
       input.recipient,
       input.type,
       input.title,
       input.message,
       input.relatedReturnRequestId,
+      input.relatedAppointmentId ?? null,
       input.jointGroupId,
-      input.createdAt ?? new Date().toISOString(),
+      JSON.stringify(metadata),
+      createdAt,
     ],
     client,
   );
+  const created: StudioNotification = {
+    id,
+    recipient: input.recipient,
+    type: input.type,
+    title: input.title,
+    message: input.message,
+    ...metadata,
+    relatedReturnRequestId: input.relatedReturnRequestId,
+    relatedAppointmentId: input.relatedAppointmentId ?? null,
+    jointGroupId: input.jointGroupId,
+    read: false,
+    createdAt,
+  };
+  if (pendingPublish) {
+    pendingPublish.push(created);
+  }
+  return created;
+}
+
+export async function createAndPublishStudioNotification(
+  input: CreateNotificationInput,
+): Promise<StudioNotification> {
+  if (!isDatabaseConfigured()) {
+    return addMemoryNotification(input);
+  }
+  const id = crypto.randomUUID();
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const metadata = buildNotificationMetadata(input);
+  await execute(
+    `INSERT INTO studio_notifications (
+      id, recipient, type, title, message, related_return_request_id, related_appointment_id,
+      joint_group_id, metadata_json, is_read, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10)`,
+    [
+      id,
+      input.recipient,
+      input.type,
+      input.title,
+      input.message,
+      input.relatedReturnRequestId,
+      input.relatedAppointmentId ?? null,
+      input.jointGroupId,
+      JSON.stringify(metadata),
+      createdAt,
+    ],
+  );
+  const created: StudioNotification = {
+    id,
+    recipient: input.recipient,
+    type: input.type,
+    title: input.title,
+    message: input.message,
+    ...metadata,
+    relatedReturnRequestId: input.relatedReturnRequestId,
+    relatedAppointmentId: input.relatedAppointmentId ?? null,
+    jointGroupId: input.jointGroupId,
+    read: false,
+    createdAt,
+  };
+  publishNotificationEvent(created);
+  return created;
 }
 
 export async function insertAttendance(
@@ -983,6 +1184,9 @@ export async function insertAttendance(
           serviceDate: input.serviceDate,
           returnOption: input.returnOption,
           returnDate: input.returnDate,
+          desiredTime: null,
+          source: input.source ?? 'attendance_form',
+          notes: '',
           procedures: grouped[prof],
           isJoint: hasOther,
           jointGroupId,
@@ -1000,17 +1204,40 @@ export async function insertAttendance(
         const dateLabel = input.returnDate
           ? ` para ${formatDateBR(input.returnDate)}`
           : '';
+        const isPublicLink = input.source === 'public_link';
+        const notifType: StudioNotificationType = hasOther
+          ? 'joint_request'
+          : isPublicLink
+            ? 'public_pre_booking'
+            : 'return_request';
+        const requestTypeLabel = hasOther
+          ? isPublicLink
+            ? 'Pré-agendamento conjunto (link público)'
+            : 'Novo agendamento conjunto'
+          : isPublicLink
+            ? 'Novo pré-agendamento (link público)'
+            : 'Nova solicitação de retorno';
         addMemoryNotification({
           recipient: prof,
-          type: 'return_request',
+          type: notifType,
           title: hasOther
             ? `Novo agendamento conjunto · ${resolvedClient.name}`
-            : `Nova solicitação de retorno · ${resolvedClient.name}`,
+            : isPublicLink
+              ? `Novo pré-agendamento · ${resolvedClient.name}`
+              : `Nova solicitação de retorno · ${resolvedClient.name}`,
           message: hasOther
             ? `${resolvedClient.name} solicitou retorno conjunto (Laís + Duda)${dateLabel}: ${grouped[prof].join(', ')}.`
             : `${resolvedClient.name} solicitou retorno${dateLabel}: ${grouped[prof].join(', ')}.`,
+          requestTypeLabel,
+          clientName: resolvedClient.name,
+          procedures: grouped[prof],
+          desiredDate: input.returnDate,
+          desiredTime: input.preferredTimes[0] ?? null,
+          isJoint: hasOther,
           relatedReturnRequestId: reqId,
           jointGroupId,
+          targetTab: 'appointments',
+          targetProfessional: prof,
           createdAt: now,
         });
       }
@@ -1019,7 +1246,8 @@ export async function insertAttendance(
     return record;
   }
 
-  return withTransaction(async (client) => {
+  const pendingNotifications: StudioNotification[] = [];
+  const savedRecord = await withTransaction(async (client) => {
     if (idempotencyKey) {
       const existingByKey = await execute<DbAttendanceRow>(
         'SELECT * FROM attendances WHERE idempotency_key = $1',
@@ -1160,10 +1388,10 @@ export async function insertAttendance(
         await execute(
           `INSERT INTO return_requests (
             id, source_attendance_id, client_id, professional, client_name, whatsapp, whatsapp_digits,
-            service_date, return_option, return_date, procedures_json, is_joint, joint_group_id,
+            service_date, return_option, return_date, desired_time, source, notes, procedures_json, is_joint, joint_group_id,
             proposed_date, proposed_time, approved_by_professional, status, appointment_id, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NULL, NULL, 0, 'waiting', NULL, $14, $14)
-          ON CONFLICT (source_attendance_id, professional) DO NOTHING`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, '', $12, $13, $14, NULL, NULL, 0, 'waiting', NULL, $15, $15)
+          ON CONFLICT (source_attendance_id, professional) WHERE source_attendance_id IS NOT NULL DO NOTHING`,
           [
             reqId,
             savedRecord.id,
@@ -1175,6 +1403,7 @@ export async function insertAttendance(
             input.serviceDate,
             input.returnOption,
             input.returnDate,
+            input.source ?? 'attendance_form',
             JSON.stringify(grouped[prof]),
             hasOther ? 1 : 0,
             jointGroupId,
@@ -1186,24 +1415,55 @@ export async function insertAttendance(
         const dateLabel = input.returnDate
           ? ` para ${formatDateBR(input.returnDate)}`
           : '';
-        await insertDbNotification(client, {
-          recipient: prof,
-          type: 'return_request',
-          title: hasOther
-            ? `Novo agendamento conjunto · ${resolvedClientName}`
-            : `Nova solicitação de retorno · ${resolvedClientName}`,
-          message: hasOther
-            ? `${resolvedClientName} solicitou retorno conjunto (Laís + Duda)${dateLabel}: ${grouped[prof].join(', ')}.`
-            : `${resolvedClientName} solicitou retorno${dateLabel}: ${grouped[prof].join(', ')}.`,
-          relatedReturnRequestId: reqId,
-          jointGroupId,
-          createdAt: now,
-        });
+        const isPublicLink = input.source === 'public_link';
+        const notifType: StudioNotificationType = hasOther
+          ? 'joint_request'
+          : isPublicLink
+            ? 'public_pre_booking'
+            : 'return_request';
+        const requestTypeLabel = hasOther
+          ? isPublicLink
+            ? 'Pré-agendamento conjunto (link público)'
+            : 'Novo agendamento conjunto'
+          : isPublicLink
+            ? 'Novo pré-agendamento (link público)'
+            : 'Nova solicitação de retorno';
+        await insertDbNotification(
+          client,
+          {
+            recipient: prof,
+            type: notifType,
+            title: hasOther
+              ? `Novo agendamento conjunto · ${resolvedClientName}`
+              : isPublicLink
+                ? `Novo pré-agendamento · ${resolvedClientName}`
+                : `Nova solicitação de retorno · ${resolvedClientName}`,
+            message: hasOther
+              ? `${resolvedClientName} solicitou retorno conjunto (Laís + Duda)${dateLabel}: ${grouped[prof].join(', ')}.`
+              : `${resolvedClientName} solicitou retorno${dateLabel}: ${grouped[prof].join(', ')}.`,
+            requestTypeLabel,
+            clientName: resolvedClientName,
+            procedures: grouped[prof],
+            desiredDate: input.returnDate,
+            desiredTime: input.preferredTimes[0] ?? null,
+            isJoint: hasOther,
+            relatedReturnRequestId: reqId,
+            jointGroupId,
+            targetTab: 'appointments',
+            targetProfessional: prof,
+            createdAt: now,
+          },
+          pendingNotifications,
+        );
       }
     }
 
     return savedRecord;
   });
+  for (const notif of pendingNotifications) {
+    publishNotificationEvent(notif);
+  }
+  return savedRecord;
 }
 
 export interface AttendanceQueryFilters {
@@ -1646,6 +1906,7 @@ export async function createAgendaAppointment(
 export async function confirmAttendanceReturnToAgenda(input: {
   attendanceId: string;
   expectedProfessional?: Professional;
+  actorProfessional?: Professional;
   appointmentDate: string;
   appointmentTime: string;
   procedureName: string;
@@ -1709,11 +1970,13 @@ export async function confirmAttendanceReturnToAgenda(input: {
     };
     memoryAttendances.set(source.id, updatedAttendance);
 
+    let matchedReqId: string | null = null;
     for (const [reqId, rr] of memoryReturnRequests.entries()) {
       if (
         rr.sourceAttendanceId === source.id &&
         rr.professional === source.professional
       ) {
+        matchedReqId = reqId;
         memoryReturnRequests.set(reqId, {
           ...rr,
           proposedDate: input.appointmentDate,
@@ -1726,10 +1989,33 @@ export async function confirmAttendanceReturnToAgenda(input: {
       }
     }
 
+    if (input.actorProfessional && input.actorProfessional !== source.professional) {
+      addMemoryNotification({
+        recipient: source.professional,
+        type: 'appointment_updated',
+        title: `Retorno confirmado na agenda · ${source.clientName}`,
+        message: `${source.clientName} foi confirmada na agenda para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}: ${input.procedureName.trim()}.`,
+        requestTypeLabel: 'Retorno confirmado na agenda',
+        clientName: source.clientName,
+        procedures: [input.procedureName.trim()],
+        desiredDate: input.appointmentDate,
+        desiredTime: input.appointmentTime,
+        isJoint: false,
+        relatedReturnRequestId: matchedReqId,
+        relatedAppointmentId: appointment.id,
+        jointGroupId: null,
+        targetTab: 'agenda',
+        targetDate: input.appointmentDate,
+        targetProfessional: source.professional,
+        createdAt: now,
+      });
+    }
+
     return { appointment, attendance: updatedAttendance };
   }
 
-  return withTransaction(async (client) => {
+  const pendingNotifications: StudioNotification[] = [];
+  const result = await withTransaction(async (client) => {
     const { rows } = await execute<DbAttendanceRow>(
       'SELECT * FROM attendances WHERE id = $1 FOR UPDATE',
       [input.attendanceId],
@@ -1793,11 +2079,12 @@ export async function confirmAttendanceReturnToAgenda(input: {
       [now, source.id],
       client,
     );
-    await execute(
+    const updatedRr = await execute<{ id: string }>(
       `UPDATE return_requests
        SET proposed_date = $1, proposed_time = $2, approved_by_professional = 1,
            status = 'confirmed', appointment_id = $3, updated_at = $4
-       WHERE source_attendance_id = $5 AND professional = $6`,
+       WHERE source_attendance_id = $5 AND professional = $6
+       RETURNING id`,
       [
         input.appointmentDate,
         input.appointmentTime,
@@ -1808,8 +2095,39 @@ export async function confirmAttendanceReturnToAgenda(input: {
       ],
       client,
     );
+
+    if (input.actorProfessional && input.actorProfessional !== source.professional) {
+      await insertDbNotification(
+        client,
+        {
+          recipient: source.professional,
+          type: 'appointment_updated',
+          title: `Retorno confirmado na agenda · ${source.client_name}`,
+          message: `${source.client_name} foi confirmada na agenda para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}: ${input.procedureName.trim()}.`,
+          requestTypeLabel: 'Retorno confirmado na agenda',
+          clientName: source.client_name,
+          procedures: [input.procedureName.trim()],
+          desiredDate: input.appointmentDate,
+          desiredTime: input.appointmentTime,
+          isJoint: false,
+          relatedReturnRequestId: updatedRr.rows[0]?.id ?? null,
+          relatedAppointmentId: appointment.id,
+          jointGroupId: null,
+          targetTab: 'agenda',
+          targetDate: input.appointmentDate,
+          targetProfessional: source.professional,
+          createdAt: now,
+        },
+        pendingNotifications,
+      );
+    }
+
     return { appointment, attendance: mapAttendanceRow(updated.rows[0]) };
   });
+  for (const notif of pendingNotifications) {
+    publishNotificationEvent(notif);
+  }
+  return result;
 }
 
 function mapReturnRequestRow(
@@ -1844,7 +2162,7 @@ function mapReturnRequestRow(
 
   return {
     id: row.id,
-    sourceAttendanceId: row.source_attendance_id,
+    sourceAttendanceId: row.source_attendance_id ?? null,
     clientId: row.client_id,
     professional: row.professional,
     clientName: row.client_name,
@@ -1853,6 +2171,9 @@ function mapReturnRequestRow(
     serviceDate: row.service_date,
     returnOption: row.return_option,
     returnDate: row.return_date,
+    desiredTime: row.desired_time ?? null,
+    source: row.source === 'public_link' ? 'public_link' : 'attendance_form',
+    notes: row.notes ?? '',
     procedures,
     isJoint: row.is_joint === 1,
     jointGroupId: row.joint_group_id,
@@ -2027,6 +2348,7 @@ export async function getReturnRequestById(
 export async function approveReturnRequest(input: {
   returnRequestId: string;
   expectedProfessional?: Professional;
+  actorProfessional?: Professional;
   appointmentDate: string;
   appointmentTime: string;
   procedureName: string;
@@ -2082,12 +2404,13 @@ export async function approveReturnRequest(input: {
         appointmentTime: input.appointmentTime,
         notes: input.notes?.trim() ?? '',
       });
+      const cleanedProcedures = input.procedureName
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       const updatedReq: ReturnRequest = {
         ...current,
-        procedures: input.procedureName
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
+        procedures: cleanedProcedures,
         proposedDate: input.appointmentDate,
         proposedTime: input.appointmentTime,
         approvedByProfessional: true,
@@ -2096,12 +2419,35 @@ export async function approveReturnRequest(input: {
         updatedAt: now,
       };
       memoryReturnRequests.set(current.id, updatedReq);
-      const sourceAtt = memoryAttendances.get(current.sourceAttendanceId);
-      if (sourceAtt) {
-        memoryAttendances.set(sourceAtt.id, {
-          ...sourceAtt,
-          returnStatus: 'confirmed',
-          updatedAt: now,
+      if (current.sourceAttendanceId) {
+        const sourceAtt = memoryAttendances.get(current.sourceAttendanceId);
+        if (sourceAtt) {
+          memoryAttendances.set(sourceAtt.id, {
+            ...sourceAtt,
+            returnStatus: 'confirmed',
+            updatedAt: now,
+          });
+        }
+      }
+      if (input.actorProfessional && input.actorProfessional !== current.professional) {
+        addMemoryNotification({
+          recipient: current.professional,
+          type: 'appointment_updated',
+          title: `Retorno confirmado na agenda · ${current.clientName}`,
+          message: `${current.clientName} foi confirmada na agenda para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}.`,
+          requestTypeLabel: 'Retorno confirmado na agenda',
+          clientName: current.clientName,
+          procedures: cleanedProcedures,
+          desiredDate: input.appointmentDate,
+          desiredTime: input.appointmentTime,
+          isJoint: false,
+          relatedReturnRequestId: current.id,
+          relatedAppointmentId: appointment.id,
+          jointGroupId: null,
+          targetTab: 'agenda',
+          targetDate: input.appointmentDate,
+          targetProfessional: current.professional,
+          createdAt: now,
         });
       }
       return { status: 'confirmed', request: updatedReq, appointment };
@@ -2183,24 +2529,36 @@ export async function approveReturnRequest(input: {
       memoryReturnRequests.set(current.id, updatedCurrent);
       memoryReturnRequests.set(partner.id, updatedPartner);
 
-      const sourceAtt = memoryAttendances.get(current.sourceAttendanceId);
-      if (sourceAtt) {
-        memoryAttendances.set(sourceAtt.id, {
-          ...sourceAtt,
-          returnStatus: 'confirmed',
-          updatedAt: now,
-        });
+      if (current.sourceAttendanceId) {
+        const sourceAtt = memoryAttendances.get(current.sourceAttendanceId);
+        if (sourceAtt) {
+          memoryAttendances.set(sourceAtt.id, {
+            ...sourceAtt,
+            returnStatus: 'confirmed',
+            updatedAt: now,
+          });
+        }
       }
 
       for (const recipient of ['lais', 'duda'] as Professional[]) {
+        const isCurrent = recipient === current.professional;
         addMemoryNotification({
           recipient,
           type: 'joint_approved',
           title: `Agendamento conjunto confirmado · ${current.clientName}`,
           message: `Laís e Duda aprovaram o horário conjunto de ${current.clientName} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}.`,
-          relatedReturnRequestId:
-            recipient === current.professional ? current.id : partner.id,
+          requestTypeLabel: 'Confirmação de agendamento conjunto',
+          clientName: current.clientName,
+          procedures: isCurrent ? updatedCurrent.procedures : updatedPartner.procedures,
+          desiredDate: input.appointmentDate,
+          desiredTime: input.appointmentTime,
+          isJoint: true,
+          relatedReturnRequestId: isCurrent ? current.id : partner.id,
+          relatedAppointmentId: isCurrent ? ownAppt.id : partnerAppt.id,
           jointGroupId: current.jointGroupId,
+          targetTab: 'agenda',
+          targetDate: input.appointmentDate,
+          targetProfessional: recipient,
           createdAt: now,
         });
       }
@@ -2223,7 +2581,6 @@ export async function approveReturnRequest(input: {
       };
     }
 
-    // Propose or update synchronized slot -> wait for partner approval
     const updatedCurrent: ReturnRequest = {
       ...current,
       procedures: input.procedureName
@@ -2256,8 +2613,19 @@ export async function approveReturnRequest(input: {
         ? `Novo horário sugerido · ${current.clientName}`
         : `Aprovação pendente · ${current.clientName}`,
       message: `${actorProfLabel(current.professional)} ${isCounterProposal ? 'ajustou' : 'sugeriu'} o horário conjunto de ${current.clientName} para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. Confirme para sincronizar as duas agendas.`,
+      requestTypeLabel: isCounterProposal
+        ? 'Alteração de horário conjunto'
+        : 'Aprovação pela outra profissional',
+      clientName: current.clientName,
+      procedures: partner.procedures,
+      desiredDate: input.appointmentDate,
+      desiredTime: input.appointmentTime,
+      isJoint: true,
       relatedReturnRequestId: partner.id,
       jointGroupId: current.jointGroupId,
+      targetTab: 'appointments',
+      targetDate: input.appointmentDate,
+      targetProfessional: partner.professional,
       createdAt: now,
     });
 
@@ -2279,7 +2647,8 @@ export async function approveReturnRequest(input: {
     };
   }
 
-  return withTransaction(async (client) => {
+  const pendingNotifications: StudioNotification[] = [];
+  const result = await withTransaction(async (client) => {
     const { rows } = await execute<DbReturnRequestRow>(
       'SELECT * FROM return_requests WHERE id = $1 FOR UPDATE',
       [input.returnRequestId],
@@ -2354,11 +2723,38 @@ export async function approveReturnRequest(input: {
           client,
         )
       ).rows[0];
-      await execute(
-        "UPDATE attendances SET return_status = 'confirmed', updated_at = $1 WHERE id = $2",
-        [now, current.source_attendance_id],
-        client,
-      );
+      if (current.source_attendance_id) {
+        await execute(
+          "UPDATE attendances SET return_status = 'confirmed', updated_at = $1 WHERE id = $2",
+          [now, current.source_attendance_id],
+          client,
+        );
+      }
+      if (input.actorProfessional && input.actorProfessional !== current.professional) {
+        await insertDbNotification(
+          client,
+          {
+            recipient: current.professional,
+            type: 'appointment_updated',
+            title: `Retorno confirmado na agenda · ${current.client_name}`,
+            message: `${current.client_name} foi confirmada na agenda para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}.`,
+            requestTypeLabel: 'Retorno confirmado na agenda',
+            clientName: current.client_name,
+            procedures: cleanedProcedures,
+            desiredDate: input.appointmentDate,
+            desiredTime: input.appointmentTime,
+            isJoint: false,
+            relatedReturnRequestId: current.id,
+            relatedAppointmentId: appointment.id,
+            jointGroupId: null,
+            targetTab: 'agenda',
+            targetDate: input.appointmentDate,
+            targetProfessional: current.professional,
+            createdAt: now,
+          },
+          pendingNotifications,
+        );
+      }
       return {
         status: 'confirmed' as ReturnRequestStatus,
         request: mapReturnRequestRow(updated),
@@ -2376,6 +2772,13 @@ export async function approveReturnRequest(input: {
       throw new Error(
         'NOT_FOUND:Solicitação conjunta da outra profissional não encontrada.',
       );
+    }
+
+    let partnerProcs: string[] = [];
+    try {
+      partnerProcs = JSON.parse(partner.procedures_json) as string[];
+    } catch {
+      partnerProcs = [];
     }
 
     const partnerAlreadyApprovedSameSlot =
@@ -2412,13 +2815,6 @@ export async function approveReturnRequest(input: {
         },
         client,
       );
-
-      let partnerProcs: string[] = [];
-      try {
-        partnerProcs = JSON.parse(partner.procedures_json) as string[];
-      } catch {
-        partnerProcs = [];
-      }
 
       const partnerAppt = await createAgendaAppointment(
         {
@@ -2471,23 +2867,39 @@ export async function approveReturnRequest(input: {
         )
       ).rows[0];
 
-      await execute(
-        "UPDATE attendances SET return_status = 'confirmed', updated_at = $1 WHERE id = $2",
-        [now, current.source_attendance_id],
-        client,
-      );
+      if (current.source_attendance_id) {
+        await execute(
+          "UPDATE attendances SET return_status = 'confirmed', updated_at = $1 WHERE id = $2",
+          [now, current.source_attendance_id],
+          client,
+        );
+      }
 
       for (const recipient of ['lais', 'duda'] as Professional[]) {
-        await insertDbNotification(client, {
-          recipient,
-          type: 'joint_approved',
-          title: `Agendamento conjunto confirmado · ${current.client_name}`,
-          message: `Laís e Duda aprovaram o horário conjunto de ${current.client_name} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}.`,
-          relatedReturnRequestId:
-            recipient === current.professional ? current.id : partner.id,
-          jointGroupId: current.joint_group_id,
-          createdAt: now,
-        });
+        const isCurrent = recipient === current.professional;
+        await insertDbNotification(
+          client,
+          {
+            recipient,
+            type: 'joint_approved',
+            title: `Agendamento conjunto confirmado · ${current.client_name}`,
+            message: `Laís e Duda aprovaram o horário conjunto de ${current.client_name} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}.`,
+            requestTypeLabel: 'Confirmação de agendamento conjunto',
+            clientName: current.client_name,
+            procedures: isCurrent ? cleanedProcedures : partnerProcs,
+            desiredDate: input.appointmentDate,
+            desiredTime: input.appointmentTime,
+            isJoint: true,
+            relatedReturnRequestId: isCurrent ? current.id : partner.id,
+            relatedAppointmentId: isCurrent ? ownAppt.id : partnerAppt.id,
+            jointGroupId: current.joint_group_id,
+            targetTab: 'agenda',
+            targetDate: input.appointmentDate,
+            targetProfessional: recipient,
+            createdAt: now,
+          },
+          pendingNotifications,
+        );
       }
 
       return {
@@ -2527,17 +2939,32 @@ export async function approveReturnRequest(input: {
 
     const isCounterProposal =
       partner.proposed_date !== null && partner.proposed_time !== null;
-    await insertDbNotification(client, {
-      recipient: partner.professional,
-      type: 'joint_proposed',
-      title: isCounterProposal
-        ? `Novo horário sugerido · ${current.client_name}`
-        : `Aprovação pendente · ${current.client_name}`,
-      message: `${actorProfLabel(current.professional)} ${isCounterProposal ? 'ajustou' : 'sugeriu'} o horário conjunto de ${current.client_name} para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. Confirme para sincronizar as duas agendas.`,
-      relatedReturnRequestId: partner.id,
-      jointGroupId: current.joint_group_id,
-      createdAt: now,
-    });
+    await insertDbNotification(
+      client,
+      {
+        recipient: partner.professional,
+        type: 'joint_proposed',
+        title: isCounterProposal
+          ? `Novo horário sugerido · ${current.client_name}`
+          : `Aprovação pendente · ${current.client_name}`,
+        message: `${actorProfLabel(current.professional)} ${isCounterProposal ? 'ajustou' : 'sugeriu'} o horário conjunto de ${current.client_name} para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. Confirme para sincronizar as duas agendas.`,
+        requestTypeLabel: isCounterProposal
+          ? 'Alteração de horário conjunto'
+          : 'Aprovação pela outra profissional',
+        clientName: current.client_name,
+        procedures: partnerProcs,
+        desiredDate: input.appointmentDate,
+        desiredTime: input.appointmentTime,
+        isJoint: true,
+        relatedReturnRequestId: partner.id,
+        jointGroupId: current.joint_group_id,
+        targetTab: 'appointments',
+        targetDate: input.appointmentDate,
+        targetProfessional: partner.professional,
+        createdAt: now,
+      },
+      pendingNotifications,
+    );
 
     return {
       status: 'pending_partner' as ReturnRequestStatus,
@@ -2545,6 +2972,11 @@ export async function approveReturnRequest(input: {
       appointment: null,
     };
   });
+
+  for (const notif of pendingNotifications) {
+    publishNotificationEvent(notif);
+  }
+  return result;
 }
 
 export async function listStudioNotifications(
@@ -2564,7 +2996,9 @@ export async function listStudioNotifications(
     title: string;
     message: string;
     related_return_request_id: string | null;
+    related_appointment_id: string | null;
     joint_group_id: string | null;
+    metadata_json: string | null;
     is_read: number;
     created_at: string;
   }>(
@@ -2574,17 +3008,37 @@ export async function listStudioNotifications(
      LIMIT 40`,
     [recipient],
   );
-  return rows.map((row) => ({
-    id: row.id,
-    recipient: row.recipient,
-    type: row.type,
-    title: row.title,
-    message: row.message,
-    relatedReturnRequestId: row.related_return_request_id,
-    jointGroupId: row.joint_group_id,
-    read: row.is_read === 1,
-    createdAt: row.created_at,
-  }));
+  return rows.map((row) => {
+    let meta: NotificationMetadataPayload = {};
+    if (row.metadata_json) {
+      try {
+        meta = JSON.parse(row.metadata_json) as NotificationMetadataPayload;
+      } catch {
+        meta = {};
+      }
+    }
+    return {
+      id: row.id,
+      recipient: row.recipient,
+      type: row.type,
+      title: row.title,
+      message: row.message,
+      requestTypeLabel: meta.requestTypeLabel,
+      clientName: meta.clientName,
+      procedures: meta.procedures,
+      desiredDate: meta.desiredDate ?? null,
+      desiredTime: meta.desiredTime ?? null,
+      isJoint: Boolean(meta.isJoint || row.joint_group_id),
+      relatedReturnRequestId: row.related_return_request_id,
+      relatedAppointmentId: row.related_appointment_id ?? null,
+      jointGroupId: row.joint_group_id,
+      targetTab: meta.targetTab ?? 'appointments',
+      targetDate: meta.targetDate ?? null,
+      targetProfessional: meta.targetProfessional ?? row.recipient,
+      read: row.is_read === 1,
+      createdAt: row.created_at,
+    };
+  });
 }
 
 export async function markStudioNotificationsRead(
@@ -2622,6 +3076,7 @@ export async function updateAgendaAppointment(
     CreateAgendaInput,
     'professional' | 'sourceAttendanceId' | 'jointGroupId'
   >,
+  actorProfessional?: Professional,
 ): Promise<AgendaAppointment | null> {
   const now = new Date().toISOString();
 
@@ -2632,6 +3087,7 @@ export async function updateAgendaAppointment(
       existing.appointmentDate !== updates.appointmentDate ||
       existing.appointmentTime !== updates.appointmentTime;
 
+    let notifiedPartner = false;
     if (existing.jointGroupId && dateOrTimeChanged) {
       const partnerAppt = Array.from(memoryAgendaAppointments.values()).find(
         (a) =>
@@ -2657,13 +3113,24 @@ export async function updateAgendaAppointment(
           appointmentTime: updates.appointmentTime,
           updatedAt: now,
         });
+        notifiedPartner = true;
         addMemoryNotification({
           recipient: partnerAppt.professional,
           type: 'joint_updated',
           title: `Horário conjunto remarcado · ${existing.clientName}`,
           message: `O agendamento conjunto de ${existing.clientName} foi sincronizado para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
+          requestTypeLabel: 'Alteração de data/horário (conjunto)',
+          clientName: updates.clientName,
+          procedures: [partnerAppt.procedureName],
+          desiredDate: updates.appointmentDate,
+          desiredTime: updates.appointmentTime,
+          isJoint: true,
           relatedReturnRequestId: null,
+          relatedAppointmentId: partnerAppt.id,
           jointGroupId: existing.jointGroupId,
+          targetTab: 'agenda',
+          targetDate: updates.appointmentDate,
+          targetProfessional: partnerAppt.professional,
           createdAt: now,
         });
       }
@@ -2681,10 +3148,38 @@ export async function updateAgendaAppointment(
       updatedAt: now,
     };
     memoryAgendaAppointments.set(id, updated);
+
+    if (
+      dateOrTimeChanged &&
+      (!notifiedPartner ||
+        (actorProfessional && actorProfessional !== existing.professional))
+    ) {
+      addMemoryNotification({
+        recipient: existing.professional,
+        type: 'appointment_updated',
+        title: `Data ou horário alterado · ${updates.clientName}`,
+        message: `O agendamento de ${updates.clientName} (${updates.procedureName}) foi alterado para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
+        requestTypeLabel: 'Alteração de data ou horário',
+        clientName: updates.clientName,
+        procedures: [updates.procedureName],
+        desiredDate: updates.appointmentDate,
+        desiredTime: updates.appointmentTime,
+        isJoint: Boolean(existing.jointGroupId),
+        relatedReturnRequestId: null,
+        relatedAppointmentId: existing.id,
+        jointGroupId: existing.jointGroupId ?? null,
+        targetTab: 'agenda',
+        targetDate: updates.appointmentDate,
+        targetProfessional: existing.professional,
+        createdAt: now,
+      });
+    }
+
     return updated;
   }
 
-  return withTransaction(async (client) => {
+  const pendingNotifications: StudioNotification[] = [];
+  const updated = await withTransaction(async (client) => {
     const existing = await lockAgendaAppointment(id, client);
     if (!existing || existing.status !== 'confirmed') return null;
 
@@ -2692,6 +3187,7 @@ export async function updateAgendaAppointment(
       existing.appointmentDate !== updates.appointmentDate ||
       existing.appointmentTime !== updates.appointmentTime;
 
+    let notifiedPartner = false;
     if (existing.jointGroupId && dateOrTimeChanged) {
       const partnerRes = await execute<DbAgendaRow>(
         "SELECT * FROM agenda_appointments WHERE joint_group_id = $1 AND id <> $2 AND status = 'confirmed' FOR UPDATE",
@@ -2719,15 +3215,30 @@ export async function updateAgendaAppointment(
           [updates.appointmentDate, updates.appointmentTime, now, partnerRow.id],
           client,
         );
-        await insertDbNotification(client, {
-          recipient: partnerRow.professional,
-          type: 'joint_updated',
-          title: `Horário conjunto remarcado · ${existing.clientName}`,
-          message: `O agendamento conjunto de ${existing.clientName} foi sincronizado para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
-          relatedReturnRequestId: null,
-          jointGroupId: existing.jointGroupId,
-          createdAt: now,
-        });
+        notifiedPartner = true;
+        await insertDbNotification(
+          client,
+          {
+            recipient: partnerRow.professional,
+            type: 'joint_updated',
+            title: `Horário conjunto remarcado · ${existing.clientName}`,
+            message: `O agendamento conjunto de ${existing.clientName} foi sincronizado para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
+            requestTypeLabel: 'Alteração de data/horário (conjunto)',
+            clientName: updates.clientName,
+            procedures: [partnerRow.procedure_name],
+            desiredDate: updates.appointmentDate,
+            desiredTime: updates.appointmentTime,
+            isJoint: true,
+            relatedReturnRequestId: null,
+            relatedAppointmentId: partnerRow.id,
+            jointGroupId: existing.jointGroupId,
+            targetTab: 'agenda',
+            targetDate: updates.appointmentDate,
+            targetProfessional: partnerRow.professional,
+            createdAt: now,
+          },
+          pendingNotifications,
+        );
       }
     }
 
@@ -2752,8 +3263,45 @@ export async function updateAgendaAppointment(
       ],
       client,
     );
+
+    if (
+      rows[0] &&
+      dateOrTimeChanged &&
+      (!notifiedPartner ||
+        (actorProfessional && actorProfessional !== existing.professional))
+    ) {
+      await insertDbNotification(
+        client,
+        {
+          recipient: existing.professional,
+          type: 'appointment_updated',
+          title: `Data ou horário alterado · ${updates.clientName}`,
+          message: `O agendamento de ${updates.clientName} (${updates.procedureName}) foi alterado para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
+          requestTypeLabel: 'Alteração de data ou horário',
+          clientName: updates.clientName,
+          procedures: [updates.procedureName],
+          desiredDate: updates.appointmentDate,
+          desiredTime: updates.appointmentTime,
+          isJoint: Boolean(existing.jointGroupId),
+          relatedReturnRequestId: null,
+          relatedAppointmentId: existing.id,
+          jointGroupId: existing.jointGroupId ?? null,
+          targetTab: 'agenda',
+          targetDate: updates.appointmentDate,
+          targetProfessional: existing.professional,
+          createdAt: now,
+        },
+        pendingNotifications,
+      );
+    }
+
     return rows[0] ? mapAgendaRow(rows[0]) : null;
   });
+
+  for (const notif of pendingNotifications) {
+    publishNotificationEvent(notif);
+  }
+  return updated;
 }
 
 async function lockAgendaAppointment(
@@ -2779,7 +3327,7 @@ async function lockAgendaAppointment(
 }
 
 async function reopenUnbookedReturn(
-  sourceId: string,
+  sourceId: string | null,
   appointmentId?: string,
   client?: PoolClient,
 ): Promise<void> {
@@ -2800,6 +3348,7 @@ async function reopenUnbookedReturn(
         }
       }
     }
+    if (!sourceId) return;
     const source = memoryAttendances.get(sourceId);
     if (!source || source.returnOption === 'no_schedule') return;
     const hasConfirmed = Array.from(memoryAgendaAppointments.values()).some(
@@ -2826,6 +3375,8 @@ async function reopenUnbookedReturn(
     );
   }
 
+  if (!sourceId) return;
+
   await execute(
     `
     UPDATE attendances SET return_status = 'waiting', updated_at = $1
@@ -2842,48 +3393,231 @@ async function reopenUnbookedReturn(
 
 export async function cancelAgendaAppointment(
   id: string,
+  actorProfessional?: Professional,
 ): Promise<AgendaAppointment | null> {
+  const now = new Date().toISOString();
+
   if (!isDatabaseConfigured()) {
     const existing = memoryAgendaAppointments.get(id);
     if (!existing) return null;
     const cancelled: AgendaAppointment = {
       ...existing,
       status: 'cancelled',
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     };
     memoryAgendaAppointments.set(id, cancelled);
-    if (existing.sourceAttendanceId) {
-      await reopenUnbookedReturn(existing.sourceAttendanceId, id);
+    await reopenUnbookedReturn(existing.sourceAttendanceId ?? null, id);
+
+    if (existing.status === 'confirmed') {
+      const partnerAppt = existing.jointGroupId
+        ? Array.from(memoryAgendaAppointments.values()).find(
+            (a) =>
+              a.jointGroupId === existing.jointGroupId &&
+              a.id !== existing.id &&
+              a.status === 'confirmed',
+          )
+        : undefined;
+
+      if (!partnerAppt || (actorProfessional && actorProfessional !== existing.professional)) {
+        addMemoryNotification({
+          recipient: existing.professional,
+          type: 'appointment_cancelled',
+          title: `Agendamento cancelado · ${existing.clientName}`,
+          message: `O agendamento de ${existing.clientName} (${existing.procedureName}) em ${formatDateBR(existing.appointmentDate)} às ${existing.appointmentTime} foi cancelado.`,
+          requestTypeLabel: 'Cancelamento de agendamento',
+          clientName: existing.clientName,
+          procedures: [existing.procedureName],
+          desiredDate: existing.appointmentDate,
+          desiredTime: existing.appointmentTime,
+          isJoint: Boolean(existing.jointGroupId),
+          relatedReturnRequestId: null,
+          relatedAppointmentId: existing.id,
+          jointGroupId: existing.jointGroupId ?? null,
+          targetTab: 'agenda',
+          targetDate: existing.appointmentDate,
+          targetProfessional: existing.professional,
+          createdAt: now,
+        });
+      }
+
+      if (partnerAppt) {
+        addMemoryNotification({
+          recipient: partnerAppt.professional,
+          type: 'appointment_cancelled',
+          title: `Agendamento conjunto cancelado · ${existing.clientName}`,
+          message: `A parte de ${existing.professional === 'lais' ? 'Laís' : 'Duda'} no agendamento conjunto de ${existing.clientName} (${formatDateBR(existing.appointmentDate)} às ${existing.appointmentTime}) foi cancelada.`,
+          requestTypeLabel: 'Cancelamento de agendamento (conjunto)',
+          clientName: existing.clientName,
+          procedures: [partnerAppt.procedureName],
+          desiredDate: existing.appointmentDate,
+          desiredTime: existing.appointmentTime,
+          isJoint: true,
+          relatedReturnRequestId: null,
+          relatedAppointmentId: partnerAppt.id,
+          jointGroupId: existing.jointGroupId ?? null,
+          targetTab: 'agenda',
+          targetDate: existing.appointmentDate,
+          targetProfessional: partnerAppt.professional,
+          createdAt: now,
+        });
+      }
     }
+
     return cancelled;
   }
 
-  return withTransaction(async (client) => {
+  const pendingNotifications: StudioNotification[] = [];
+  const cancelled = await withTransaction(async (client) => {
     const existing = await lockAgendaAppointment(id, client);
     if (!existing) return null;
     const { rows } = await execute<DbAgendaRow>(
       "UPDATE agenda_appointments SET status = 'cancelled', updated_at = $1 WHERE id = $2 RETURNING *",
-      [new Date().toISOString(), id],
+      [now, id],
       client,
     );
-    if (existing.sourceAttendanceId)
-      await reopenUnbookedReturn(existing.sourceAttendanceId, id, client);
+    await reopenUnbookedReturn(existing.sourceAttendanceId ?? null, id, client);
+
+    if (existing.status === 'confirmed') {
+      let partnerRow: DbAgendaRow | undefined;
+      if (existing.jointGroupId) {
+        const partnerRes = await execute<DbAgendaRow>(
+          "SELECT * FROM agenda_appointments WHERE joint_group_id = $1 AND id <> $2 AND status = 'confirmed'",
+          [existing.jointGroupId, existing.id],
+          client,
+        );
+        partnerRow = partnerRes.rows[0];
+      }
+
+      if (!partnerRow || (actorProfessional && actorProfessional !== existing.professional)) {
+        await insertDbNotification(
+          client,
+          {
+            recipient: existing.professional,
+            type: 'appointment_cancelled',
+            title: `Agendamento cancelado · ${existing.clientName}`,
+            message: `O agendamento de ${existing.clientName} (${existing.procedureName}) em ${formatDateBR(existing.appointmentDate)} às ${existing.appointmentTime} foi cancelado.`,
+            requestTypeLabel: 'Cancelamento de agendamento',
+            clientName: existing.clientName,
+            procedures: [existing.procedureName],
+            desiredDate: existing.appointmentDate,
+            desiredTime: existing.appointmentTime,
+            isJoint: Boolean(existing.jointGroupId),
+            relatedReturnRequestId: null,
+            relatedAppointmentId: existing.id,
+            jointGroupId: existing.jointGroupId ?? null,
+            targetTab: 'agenda',
+            targetDate: existing.appointmentDate,
+            targetProfessional: existing.professional,
+            createdAt: now,
+          },
+          pendingNotifications,
+        );
+      }
+
+      if (partnerRow) {
+        await insertDbNotification(
+          client,
+          {
+            recipient: partnerRow.professional,
+            type: 'appointment_cancelled',
+            title: `Agendamento conjunto cancelado · ${existing.clientName}`,
+            message: `A parte de ${existing.professional === 'lais' ? 'Laís' : 'Duda'} no agendamento conjunto de ${existing.clientName} (${formatDateBR(existing.appointmentDate)} às ${existing.appointmentTime}) foi cancelada.`,
+            requestTypeLabel: 'Cancelamento de agendamento (conjunto)',
+            clientName: existing.clientName,
+            procedures: [partnerRow.procedure_name],
+            desiredDate: existing.appointmentDate,
+            desiredTime: existing.appointmentTime,
+            isJoint: true,
+            relatedReturnRequestId: null,
+            relatedAppointmentId: partnerRow.id,
+            jointGroupId: existing.jointGroupId ?? null,
+            targetTab: 'agenda',
+            targetDate: existing.appointmentDate,
+            targetProfessional: partnerRow.professional,
+            createdAt: now,
+          },
+          pendingNotifications,
+        );
+      }
+    }
+
     return mapAgendaRow(rows[0]);
   });
+
+  for (const notif of pendingNotifications) {
+    publishNotificationEvent(notif);
+  }
+  return cancelled;
 }
 
-export async function deleteAgendaAppointment(id: string): Promise<boolean> {
+export async function deleteAgendaAppointment(
+  id: string,
+  actorProfessional?: Professional,
+): Promise<boolean> {
+  const now = new Date().toISOString();
+
   if (!isDatabaseConfigured()) {
     const existing = memoryAgendaAppointments.get(id);
     if (!existing) return false;
     memoryAgendaAppointments.delete(id);
-    if (existing.sourceAttendanceId) {
-      await reopenUnbookedReturn(existing.sourceAttendanceId, id);
+    await reopenUnbookedReturn(existing.sourceAttendanceId ?? null, id);
+    if (existing.status === 'confirmed') {
+      const partnerAppt = existing.jointGroupId
+        ? Array.from(memoryAgendaAppointments.values()).find(
+            (a) =>
+              a.jointGroupId === existing.jointGroupId &&
+              a.id !== existing.id &&
+              a.status === 'confirmed',
+          )
+        : undefined;
+      if (!partnerAppt || (actorProfessional && actorProfessional !== existing.professional)) {
+        addMemoryNotification({
+          recipient: existing.professional,
+          type: 'appointment_cancelled',
+          title: `Agendamento cancelado · ${existing.clientName}`,
+          message: `O agendamento de ${existing.clientName} (${existing.procedureName}) em ${formatDateBR(existing.appointmentDate)} às ${existing.appointmentTime} foi removido da agenda.`,
+          requestTypeLabel: 'Cancelamento de agendamento',
+          clientName: existing.clientName,
+          procedures: [existing.procedureName],
+          desiredDate: existing.appointmentDate,
+          desiredTime: existing.appointmentTime,
+          isJoint: Boolean(existing.jointGroupId),
+          relatedReturnRequestId: null,
+          relatedAppointmentId: existing.id,
+          jointGroupId: existing.jointGroupId ?? null,
+          targetTab: 'agenda',
+          targetDate: existing.appointmentDate,
+          targetProfessional: existing.professional,
+          createdAt: now,
+        });
+      }
+      if (partnerAppt) {
+        addMemoryNotification({
+          recipient: partnerAppt.professional,
+          type: 'appointment_cancelled',
+          title: `Agendamento conjunto cancelado · ${existing.clientName}`,
+          message: `A parte de ${existing.professional === 'lais' ? 'Laís' : 'Duda'} no agendamento conjunto de ${existing.clientName} foi removida da agenda.`,
+          requestTypeLabel: 'Cancelamento de agendamento (conjunto)',
+          clientName: existing.clientName,
+          procedures: [partnerAppt.procedureName],
+          desiredDate: existing.appointmentDate,
+          desiredTime: existing.appointmentTime,
+          isJoint: true,
+          relatedReturnRequestId: null,
+          relatedAppointmentId: partnerAppt.id,
+          jointGroupId: existing.jointGroupId ?? null,
+          targetTab: 'agenda',
+          targetDate: existing.appointmentDate,
+          targetProfessional: partnerAppt.professional,
+          createdAt: now,
+        });
+      }
     }
     return true;
   }
 
-  return withTransaction(async (client) => {
+  const pendingNotifications: StudioNotification[] = [];
+  const removed = await withTransaction(async (client) => {
     const existing = await lockAgendaAppointment(id, client);
     if (!existing) return false;
     await execute(
@@ -2891,8 +3625,832 @@ export async function deleteAgendaAppointment(id: string): Promise<boolean> {
       [id],
       client,
     );
-    if (existing.sourceAttendanceId)
-      await reopenUnbookedReturn(existing.sourceAttendanceId, id, client);
+    await reopenUnbookedReturn(existing.sourceAttendanceId ?? null, id, client);
+
+    if (existing.status === 'confirmed') {
+      let partnerRow: DbAgendaRow | undefined;
+      if (existing.jointGroupId) {
+        const partnerRes = await execute<DbAgendaRow>(
+          "SELECT * FROM agenda_appointments WHERE joint_group_id = $1 AND id <> $2 AND status = 'confirmed'",
+          [existing.jointGroupId, existing.id],
+          client,
+        );
+        partnerRow = partnerRes.rows[0];
+      }
+      if (!partnerRow || (actorProfessional && actorProfessional !== existing.professional)) {
+        await insertDbNotification(
+          client,
+          {
+            recipient: existing.professional,
+            type: 'appointment_cancelled',
+            title: `Agendamento cancelado · ${existing.clientName}`,
+            message: `O agendamento de ${existing.clientName} (${existing.procedureName}) em ${formatDateBR(existing.appointmentDate)} às ${existing.appointmentTime} foi removido da agenda.`,
+            requestTypeLabel: 'Cancelamento de agendamento',
+            clientName: existing.clientName,
+            procedures: [existing.procedureName],
+            desiredDate: existing.appointmentDate,
+            desiredTime: existing.appointmentTime,
+            isJoint: Boolean(existing.jointGroupId),
+            relatedReturnRequestId: null,
+            relatedAppointmentId: existing.id,
+            jointGroupId: existing.jointGroupId ?? null,
+            targetTab: 'agenda',
+            targetDate: existing.appointmentDate,
+            targetProfessional: existing.professional,
+            createdAt: now,
+          },
+          pendingNotifications,
+        );
+      }
+      if (partnerRow) {
+        await insertDbNotification(
+          client,
+          {
+            recipient: partnerRow.professional,
+            type: 'appointment_cancelled',
+            title: `Agendamento conjunto cancelado · ${existing.clientName}`,
+            message: `A parte de ${existing.professional === 'lais' ? 'Laís' : 'Duda'} no agendamento conjunto de ${existing.clientName} foi removida da agenda.`,
+            requestTypeLabel: 'Cancelamento de agendamento (conjunto)',
+            clientName: existing.clientName,
+            procedures: [partnerRow.procedure_name],
+            desiredDate: existing.appointmentDate,
+            desiredTime: existing.appointmentTime,
+            isJoint: true,
+            relatedReturnRequestId: null,
+            relatedAppointmentId: partnerRow.id,
+            jointGroupId: existing.jointGroupId ?? null,
+            targetTab: 'agenda',
+            targetDate: existing.appointmentDate,
+            targetProfessional: partnerRow.professional,
+            createdAt: now,
+          },
+          pendingNotifications,
+        );
+      }
+    }
+
     return true;
   });
+
+  for (const notif of pendingNotifications) {
+    publishNotificationEvent(notif);
+  }
+  return removed;
 }
+
+// ============================================================================
+// APP SETTINGS & WEB PUSH SUBSCRIPTIONS
+// ============================================================================
+
+export async function getOrCreateAppSetting<T>(
+  key: string,
+  createValue: () => T,
+): Promise<T> {
+  if (!isDatabaseConfigured()) {
+    const existing = memoryAppSettings.get(key);
+    if (existing) {
+      return JSON.parse(existing) as T;
+    }
+    const created = createValue();
+    memoryAppSettings.set(key, JSON.stringify(created));
+    return created;
+  }
+
+  const existing = (
+    await execute<{ value_json: string }>(
+      'SELECT value_json FROM app_settings WHERE key = $1',
+      [key],
+    )
+  ).rows[0];
+  if (existing) {
+    return JSON.parse(existing.value_json) as T;
+  }
+
+  const created = createValue();
+  const now = new Date().toISOString();
+  await execute(
+    `INSERT INTO app_settings (key, value_json, updated_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (key) DO NOTHING`,
+    [key, JSON.stringify(created), now],
+  );
+  const reread = (
+    await execute<{ value_json: string }>(
+      'SELECT value_json FROM app_settings WHERE key = $1',
+      [key],
+    )
+  ).rows[0];
+  return reread ? (JSON.parse(reread.value_json) as T) : created;
+}
+
+export async function upsertPushSubscription(input: {
+  userId: string;
+  professional: Professional;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  deviceLabel: string;
+}): Promise<PushSubscriptionInfo> {
+  const now = new Date().toISOString();
+  const label = input.deviceLabel.trim().slice(0, 120) || 'Dispositivo';
+
+  if (!isDatabaseConfigured()) {
+    const existing = Array.from(memoryPushSubscriptions.values()).find(
+      (item) => item.endpoint === input.endpoint,
+    );
+    const id = existing?.id ?? crypto.randomUUID();
+    const record: MemoryPushSubscription = {
+      id,
+      userId: input.userId,
+      professional: input.professional,
+      endpoint: input.endpoint,
+      p256dh: input.p256dh,
+      auth: input.auth,
+      deviceLabel: label,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      lastSuccessAt: existing?.lastSuccessAt ?? null,
+    };
+    memoryPushSubscriptions.set(id, record);
+    return {
+      id: record.id,
+      deviceLabel: record.deviceLabel,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      lastSuccessAt: record.lastSuccessAt,
+    };
+  }
+
+  const id = crypto.randomUUID();
+  const { rows } = await execute<{
+    id: string;
+    device_label: string;
+    created_at: string;
+    updated_at: string;
+    last_success_at: string | null;
+  }>(
+    `INSERT INTO push_subscriptions (
+      id, user_id, professional, endpoint, p256dh, auth, device_label, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+    ON CONFLICT (endpoint) DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      professional = EXCLUDED.professional,
+      p256dh = EXCLUDED.p256dh,
+      auth = EXCLUDED.auth,
+      device_label = EXCLUDED.device_label,
+      updated_at = EXCLUDED.updated_at
+    RETURNING id, device_label, created_at, updated_at, last_success_at`,
+    [
+      id,
+      input.userId,
+      input.professional,
+      input.endpoint,
+      input.p256dh,
+      input.auth,
+      label,
+      now,
+    ],
+  );
+  const row = rows[0];
+  return {
+    id: row.id,
+    deviceLabel: row.device_label,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastSuccessAt: row.last_success_at,
+  };
+}
+
+export async function deletePushSubscriptionForUser(
+  userId: string,
+  endpoint?: string,
+): Promise<number> {
+  if (!isDatabaseConfigured()) {
+    let deleted = 0;
+    for (const [id, sub] of memoryPushSubscriptions.entries()) {
+      if (sub.userId === userId && (!endpoint || sub.endpoint === endpoint)) {
+        memoryPushSubscriptions.delete(id);
+        deleted += 1;
+      }
+    }
+    return deleted;
+  }
+
+  if (endpoint) {
+    const res = await execute(
+      'DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2',
+      [userId, endpoint],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  const res = await execute(
+    'DELETE FROM push_subscriptions WHERE user_id = $1',
+    [userId],
+  );
+  return res.rowCount ?? 0;
+}
+
+export async function deletePushSubscriptionByEndpoint(
+  endpoint: string,
+): Promise<void> {
+  if (!isDatabaseConfigured()) {
+    for (const [id, sub] of memoryPushSubscriptions.entries()) {
+      if (sub.endpoint === endpoint) {
+        memoryPushSubscriptions.delete(id);
+      }
+    }
+    return;
+  }
+
+  await execute('DELETE FROM push_subscriptions WHERE endpoint = $1', [
+    endpoint,
+  ]);
+}
+
+export async function listPushSubscriptionsForUser(
+  userId: string,
+): Promise<PushSubscriptionInfo[]> {
+  if (!isDatabaseConfigured()) {
+    return Array.from(memoryPushSubscriptions.values())
+      .filter((s) => s.userId === userId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((s) => ({
+        id: s.id,
+        deviceLabel: s.deviceLabel,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+        lastSuccessAt: s.lastSuccessAt,
+      }));
+  }
+
+  const { rows } = await execute<{
+    id: string;
+    device_label: string;
+    created_at: string;
+    updated_at: string;
+    last_success_at: string | null;
+  }>(
+    `SELECT id, device_label, created_at, updated_at, last_success_at
+     FROM push_subscriptions
+     WHERE user_id = $1
+     ORDER BY updated_at DESC`,
+    [userId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    deviceLabel: row.device_label,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastSuccessAt: row.last_success_at,
+  }));
+}
+
+export async function listPushSubscriptionsForProfessional(
+  professional: Professional,
+): Promise<
+  Array<{ id: string; endpoint: string; p256dh: string; auth: string }>
+> {
+  if (!isDatabaseConfigured()) {
+    return Array.from(memoryPushSubscriptions.values())
+      .filter((s) => s.professional === professional)
+      .map((s) => ({
+        id: s.id,
+        endpoint: s.endpoint,
+        p256dh: s.p256dh,
+        auth: s.auth,
+      }));
+  }
+
+  const { rows } = await execute<{
+    id: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+  }>(
+    `SELECT id, endpoint, p256dh, auth
+     FROM push_subscriptions
+     WHERE professional = $1`,
+    [professional],
+  );
+  return rows;
+}
+
+export async function markPushSubscriptionSuccess(id: string): Promise<void> {
+  const now = new Date().toISOString();
+  if (!isDatabaseConfigured()) {
+    const existing = memoryPushSubscriptions.get(id);
+    if (existing) {
+      memoryPushSubscriptions.set(id, {
+        ...existing,
+        lastSuccessAt: now,
+        updatedAt: now,
+      });
+    }
+    return;
+  }
+
+  await execute(
+    'UPDATE push_subscriptions SET last_success_at = $1, updated_at = $1 WHERE id = $2',
+    [now, id],
+  );
+}
+
+// ============================================================================
+// STANDALONE PUBLIC PRE-BOOKINGS (NO ATTENDANCE / REVENUE / COMMISSION IMPACT)
+// ============================================================================
+
+export interface InsertPublicPreBookingInput {
+  clientId?: string | null;
+  clientName: string;
+  whatsapp: string;
+  whatsappDigits: string;
+  laisProcedures: string[];
+  dudaProcedures: string[];
+  desiredDate: string;
+  desiredTime: string;
+  notes?: string;
+  idempotencyKey?: string | null;
+}
+
+export async function insertPublicPreBooking(
+  input: InsertPublicPreBookingInput,
+): Promise<{
+  requests: ReturnRequest[];
+  isJoint: boolean;
+  clientName: string;
+  desiredDate: string;
+  desiredTime: string;
+}> {
+  const now = new Date().toISOString();
+  const todayISO = getBrazilTodayISO();
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
+  const normalizedDigits = normalizeWhatsAppDigits(input.whatsappDigits);
+  const formattedWhatsapp = formatBrazilPhone(normalizedDigits);
+  const cleanedName = input.clientName.trim().replace(/\s+/g, ' ');
+  const normName = normalizeClientName(cleanedName);
+  const notes = input.notes?.trim().slice(0, 500) ?? '';
+
+  const grouped: { lais: string[]; duda: string[] } = {
+    lais: input.laisProcedures,
+    duda: input.dudaProcedures,
+  };
+  const targetProfs: Professional[] = [];
+  if (grouped.lais.length > 0) targetProfs.push('lais');
+  if (grouped.duda.length > 0) targetProfs.push('duda');
+
+  const isJoint = targetProfs.length === 2;
+  const jointGroupId = isJoint ? crypto.randomUUID() : null;
+
+  if (!isDatabaseConfigured()) {
+    if (idempotencyKey) {
+      const cached = memoryPreBookingIdempotency.get(idempotencyKey);
+      if (cached && cached.length > 0) {
+        return {
+          requests: cached,
+          isJoint: cached[0].isJoint,
+          clientName: cached[0].clientName,
+          desiredDate: cached[0].returnDate ?? input.desiredDate,
+          desiredTime: cached[0].desiredTime ?? input.desiredTime,
+        };
+      }
+    }
+
+    let resolvedClient: DbClientRow | undefined;
+    if (input.clientId) {
+      const candidate = memoryClients.get(input.clientId);
+      if (candidate && candidate.whatsapp_digits === normalizedDigits) {
+        resolvedClient = candidate;
+        candidate.updated_at = now;
+      }
+    }
+    if (!resolvedClient) {
+      resolvedClient = Array.from(memoryClients.values()).find(
+        (c) =>
+          c.whatsapp_digits === normalizedDigits &&
+          c.normalized_name === normName,
+      );
+      if (resolvedClient) {
+        resolvedClient.updated_at = now;
+        resolvedClient.whatsapp = formattedWhatsapp;
+      } else {
+        resolvedClient = {
+          id: crypto.randomUUID(),
+          name: cleanedName,
+          normalized_name: normName,
+          whatsapp: formattedWhatsapp,
+          whatsapp_digits: normalizedDigits,
+          created_at: now,
+          updated_at: now,
+        };
+        memoryClients.set(resolvedClient.id, resolvedClient);
+      }
+    }
+
+    const createdRequests: ReturnRequest[] = [];
+    for (const prof of targetProfs) {
+      const reqId = crypto.randomUUID();
+      const item: ReturnRequest = {
+        id: reqId,
+        sourceAttendanceId: null,
+        clientId: resolvedClient.id,
+        professional: prof,
+        clientName: resolvedClient.name,
+        whatsapp: formattedWhatsapp,
+        whatsappDigits: normalizedDigits,
+        serviceDate: todayISO,
+        returnOption: 'specific_date',
+        returnDate: input.desiredDate,
+        desiredTime: input.desiredTime,
+        source: 'public_link',
+        notes,
+        procedures: grouped[prof],
+        isJoint,
+        jointGroupId,
+        proposedDate: null,
+        proposedTime: null,
+        approvedByProfessional: false,
+        status: 'waiting',
+        appointmentId: null,
+        partner: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      memoryReturnRequests.set(reqId, item);
+      createdRequests.push(item);
+
+      const dateTimeLabel = `${formatDateBR(input.desiredDate)} às ${input.desiredTime}`;
+      addMemoryNotification({
+        recipient: prof,
+        type: isJoint ? 'joint_request' : 'public_pre_booking',
+        title: isJoint
+          ? `Novo pré-agendamento conjunto · ${resolvedClient.name}`
+          : `Novo pré-agendamento · ${resolvedClient.name}`,
+        message: isJoint
+          ? `${resolvedClient.name} solicitou pré-agendamento conjunto (Laís + Duda) para ${dateTimeLabel}: ${grouped[prof].join(', ')}.`
+          : `${resolvedClient.name} solicitou pré-agendamento para ${dateTimeLabel}: ${grouped[prof].join(', ')}.`,
+        requestTypeLabel: isJoint
+          ? 'Pré-agendamento conjunto'
+          : 'Novo pré-agendamento',
+        clientName: resolvedClient.name,
+        procedures: grouped[prof],
+        desiredDate: input.desiredDate,
+        desiredTime: input.desiredTime,
+        isJoint,
+        relatedReturnRequestId: reqId,
+        jointGroupId,
+        targetTab: 'appointments',
+        targetProfessional: prof,
+        createdAt: now,
+      });
+    }
+
+    if (idempotencyKey && createdRequests.length > 0) {
+      memoryPreBookingIdempotency.set(idempotencyKey, createdRequests);
+    }
+
+    return {
+      requests: createdRequests,
+      isJoint,
+      clientName: resolvedClient.name,
+      desiredDate: input.desiredDate,
+      desiredTime: input.desiredTime,
+    };
+  }
+
+  const pendingNotifications: StudioNotification[] = [];
+  const saved = await withTransaction(async (client) => {
+    if (idempotencyKey) {
+      const existing = await execute<DbReturnRequestRow>(
+        'SELECT * FROM return_requests WHERE idempotency_key = $1 ORDER BY created_at ASC',
+        [idempotencyKey],
+        client,
+      );
+      if (existing.rows.length > 0) {
+        const mapped = existing.rows.map((r) => mapReturnRequestRow(r));
+        return {
+          requests: mapped,
+          isJoint: mapped[0].isJoint,
+          clientName: mapped[0].clientName,
+          desiredDate: mapped[0].returnDate ?? input.desiredDate,
+          desiredTime: mapped[0].desiredTime ?? input.desiredTime,
+        };
+      }
+    }
+
+    let resolvedClientId: string | null = null;
+    let resolvedClientName = cleanedName;
+
+    if (input.clientId) {
+      const existingClient = await execute<{
+        id: string;
+        name: string;
+        whatsapp_digits: string;
+      }>(
+        'SELECT id, name, whatsapp_digits FROM clients WHERE id = $1',
+        [input.clientId],
+        client,
+      );
+      const found = existingClient.rows[0];
+      if (found && found.whatsapp_digits === normalizedDigits) {
+        resolvedClientId = found.id;
+        resolvedClientName = found.name;
+        await execute(
+          'UPDATE clients SET updated_at = $1, whatsapp = $2 WHERE id = $3',
+          [now, formattedWhatsapp, found.id],
+          client,
+        );
+      }
+    }
+
+    if (!resolvedClientId) {
+      const upsertedClient = await execute<{ id: string; name: string }>(
+        `INSERT INTO clients (
+          id, name, normalized_name, whatsapp, whatsapp_digits, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $6)
+        ON CONFLICT (whatsapp_digits, normalized_name)
+        DO UPDATE SET updated_at = EXCLUDED.updated_at, whatsapp = EXCLUDED.whatsapp
+        RETURNING id, name`,
+        [
+          crypto.randomUUID(),
+          cleanedName,
+          normName,
+          formattedWhatsapp,
+          normalizedDigits,
+          now,
+        ],
+        client,
+      );
+      resolvedClientId = upsertedClient.rows[0].id;
+      resolvedClientName = upsertedClient.rows[0].name;
+    }
+
+    const createdRequests: ReturnRequest[] = [];
+    for (const prof of targetProfs) {
+      const reqId = crypto.randomUUID();
+      const inserted = await execute<DbReturnRequestRow>(
+        `INSERT INTO return_requests (
+          id, source_attendance_id, client_id, professional, client_name, whatsapp, whatsapp_digits,
+          service_date, return_option, return_date, desired_time, source, notes, idempotency_key,
+          procedures_json, is_joint, joint_group_id, proposed_date, proposed_time,
+          approved_by_professional, status, appointment_id, created_at, updated_at
+        ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'specific_date', $8, $9, 'public_link', $10, $11, $12, $13, $14, NULL, NULL, 0, 'waiting', NULL, $15, $15)
+        RETURNING *`,
+        [
+          reqId,
+          resolvedClientId,
+          prof,
+          resolvedClientName,
+          formattedWhatsapp,
+          normalizedDigits,
+          todayISO,
+          input.desiredDate,
+          input.desiredTime,
+          notes,
+          idempotencyKey,
+          JSON.stringify(grouped[prof]),
+          isJoint ? 1 : 0,
+          jointGroupId,
+          now,
+        ],
+        client,
+      );
+      createdRequests.push(mapReturnRequestRow(inserted.rows[0]));
+
+      const dateTimeLabel = `${formatDateBR(input.desiredDate)} às ${input.desiredTime}`;
+      await insertDbNotification(
+        client,
+        {
+          recipient: prof,
+          type: isJoint ? 'joint_request' : 'public_pre_booking',
+          title: isJoint
+            ? `Novo pré-agendamento conjunto · ${resolvedClientName}`
+            : `Novo pré-agendamento · ${resolvedClientName}`,
+          message: isJoint
+            ? `${resolvedClientName} solicitou pré-agendamento conjunto (Laís + Duda) para ${dateTimeLabel}: ${grouped[prof].join(', ')}.`
+            : `${resolvedClientName} solicitou pré-agendamento para ${dateTimeLabel}: ${grouped[prof].join(', ')}.`,
+          requestTypeLabel: isJoint
+            ? 'Pré-agendamento conjunto'
+            : 'Novo pré-agendamento',
+          clientName: resolvedClientName,
+          procedures: grouped[prof],
+          desiredDate: input.desiredDate,
+          desiredTime: input.desiredTime,
+          isJoint,
+          relatedReturnRequestId: reqId,
+          jointGroupId,
+          targetTab: 'appointments',
+          targetProfessional: prof,
+          createdAt: now,
+        },
+        pendingNotifications,
+      );
+    }
+
+    return {
+      requests: createdRequests,
+      isJoint,
+      clientName: resolvedClientName,
+      desiredDate: input.desiredDate,
+      desiredTime: input.desiredTime,
+    };
+  });
+
+  for (const notif of pendingNotifications) {
+    publishNotificationEvent(notif);
+  }
+  return saved;
+}
+
+// ============================================================================
+// INTERESTED LEADS ("INTERESSADAS")
+// ============================================================================
+
+interface DbInterestedLeadRow {
+  id: string;
+  name: string;
+  whatsapp: string;
+  whatsapp_digits: string;
+  interested_services_json: string;
+  service_categories_json: string;
+  accepts_promotions: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapInterestedLeadRow(row: DbInterestedLeadRow): InterestedLead {
+  let services: InterestedLeadService[] = [];
+  let serviceCategories: ServiceCategoryId[] = [];
+  try {
+    services = JSON.parse(row.interested_services_json) as InterestedLeadService[];
+  } catch {
+    services = [];
+  }
+  try {
+    serviceCategories = JSON.parse(
+      row.service_categories_json,
+    ) as ServiceCategoryId[];
+  } catch {
+    serviceCategories = [];
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    whatsapp: row.whatsapp,
+    whatsappDigits: row.whatsapp_digits,
+    services,
+    serviceCategories,
+    acceptsPromotions: row.accepts_promotions === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function insertInterestedLead(input: {
+  name: string;
+  whatsapp: string;
+  whatsappDigits: string;
+  services: InterestedLeadService[];
+  serviceCategories: ServiceCategoryId[];
+  acceptsPromotions: boolean;
+  idempotencyKey?: string | null;
+}): Promise<InterestedLead> {
+  const now = new Date().toISOString();
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
+  const normalizedDigits = normalizeWhatsAppDigits(input.whatsappDigits);
+  const formattedWhatsapp = formatBrazilPhone(normalizedDigits);
+  const cleanedName = input.name.trim().replace(/\s+/g, ' ');
+
+  if (!isDatabaseConfigured()) {
+    if (idempotencyKey) {
+      const existing = memoryInterestedIdempotency.get(idempotencyKey);
+      if (existing) return existing;
+    }
+    const lead: InterestedLead = {
+      id: crypto.randomUUID(),
+      name: cleanedName,
+      whatsapp: formattedWhatsapp,
+      whatsappDigits: normalizedDigits,
+      services: input.services,
+      serviceCategories: input.serviceCategories,
+      acceptsPromotions: input.acceptsPromotions,
+      createdAt: now,
+      updatedAt: now,
+    };
+    memoryInterestedLeads.set(lead.id, lead);
+    if (idempotencyKey) {
+      memoryInterestedIdempotency.set(idempotencyKey, lead);
+    }
+    return lead;
+  }
+
+  if (idempotencyKey) {
+    const existing = (
+      await execute<DbInterestedLeadRow>(
+        'SELECT * FROM interested_leads WHERE idempotency_key = $1',
+        [idempotencyKey],
+      )
+    ).rows[0];
+    if (existing) {
+      return mapInterestedLeadRow(existing);
+    }
+  }
+
+  const id = crypto.randomUUID();
+  const inserted = await execute<DbInterestedLeadRow>(
+    `INSERT INTO interested_leads (
+      id, name, whatsapp, whatsapp_digits, interested_services_json,
+      service_categories_json, accepts_promotions, idempotency_key, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+    ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+    RETURNING *`,
+    [
+      id,
+      cleanedName,
+      formattedWhatsapp,
+      normalizedDigits,
+      JSON.stringify(input.services),
+      JSON.stringify(input.serviceCategories),
+      input.acceptsPromotions ? 1 : 0,
+      idempotencyKey,
+      now,
+    ],
+  );
+
+  if (inserted.rows[0]) {
+    return mapInterestedLeadRow(inserted.rows[0]);
+  }
+  if (idempotencyKey) {
+    const existing = (
+      await execute<DbInterestedLeadRow>(
+        'SELECT * FROM interested_leads WHERE idempotency_key = $1',
+        [idempotencyKey],
+      )
+    ).rows[0];
+    if (existing) return mapInterestedLeadRow(existing);
+  }
+  const fallback = (
+    await execute<DbInterestedLeadRow>(
+      'SELECT * FROM interested_leads WHERE id = $1',
+      [id],
+    )
+  ).rows[0];
+  return mapInterestedLeadRow(fallback);
+}
+
+export async function listInterestedLeads(filters?: {
+  search?: string;
+  serviceId?: string;
+  category?: ServiceCategoryId;
+  acceptsPromotions?: boolean;
+}): Promise<InterestedLead[]> {
+  let leads: InterestedLead[];
+  if (!isDatabaseConfigured()) {
+    leads = Array.from(memoryInterestedLeads.values()).sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt),
+    );
+  } else {
+    const { rows } = await execute<DbInterestedLeadRow>(
+      'SELECT * FROM interested_leads ORDER BY created_at DESC',
+    );
+    leads = rows.map(mapInterestedLeadRow);
+  }
+
+  if (filters?.serviceId && filters.serviceId !== 'all') {
+    leads = leads.filter((lead) =>
+      lead.services.some((svc) => svc.id === filters.serviceId),
+    );
+  }
+  if (filters?.category) {
+    leads = leads.filter((lead) =>
+      lead.serviceCategories.includes(filters.category!),
+    );
+  }
+  if (typeof filters?.acceptsPromotions === 'boolean') {
+    leads = leads.filter(
+      (lead) => lead.acceptsPromotions === filters.acceptsPromotions,
+    );
+  }
+  if (filters?.search && filters.search.trim().length > 0) {
+    const q = filters.search.trim().toLowerCase();
+    const qDigits = q.replace(/\D/g, '');
+    leads = leads.filter(
+      (lead) =>
+        lead.name.toLowerCase().includes(q) ||
+        lead.whatsapp.toLowerCase().includes(q) ||
+        (qDigits.length > 0 && lead.whatsappDigits.includes(qDigits)),
+    );
+  }
+
+  return leads;
+}
+
+export async function deleteInterestedLead(id: string): Promise<boolean> {
+  if (!isDatabaseConfigured()) {
+    return memoryInterestedLeads.delete(id);
+  }
+  const res = await execute('DELETE FROM interested_leads WHERE id = $1', [id]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+

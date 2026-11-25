@@ -35,7 +35,10 @@ export function ClientDetailModal({
             </h2>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1">
               <a
-                href={buildWhatsAppLink(client.whatsapp)}
+                href={buildWhatsAppLink(
+                  client.whatsapp,
+                  `Olá ${client.clientName}! Aqui é do estúdio MAIS CÍLIOS.`
+                )}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm font-semibold text-success hover:underline tabular-nums"
@@ -43,6 +46,10 @@ export function ClientDetailModal({
                 <MessageCircle className="w-4 h-4" />
                 <span>{client.whatsapp}</span>
               </a>
+              <span className="text-xs text-text-secondary tabular-nums">
+                Último atendimento:{' '}
+                <strong className="text-text-primary">{formatDateBR(client.lastVisitDate)}</strong>
+              </span>
               <span className="text-xs text-text-secondary tabular-nums">
                 {client.totalVisits}{' '}
                 {client.totalVisits === 1 ? 'atendimento' : 'atendimentos'}
@@ -63,7 +70,36 @@ export function ClientDetailModal({
           </button>
         </div>
 
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-3" tabIndex={0} role="region" aria-label="Histórico da cliente">
+        <div className="p-5 sm:p-6 overflow-y-auto space-y-4" tabIndex={0} role="region" aria-label="Histórico da cliente">
+          {((client.performedProcedures && client.performedProcedures.length > 0) ||
+            client.nextAppointment) && (
+            <div className="p-4 rounded-2xl bg-brand-soft/65 border border-brand/30 space-y-2.5">
+              {client.performedProcedures && client.performedProcedures.length > 0 && (
+                <div className="text-xs text-text-secondary">
+                  <span className="font-semibold text-brand-strong block mb-0.5">
+                    Procedimentos realizados
+                  </span>
+                  <p className="text-sm text-text-primary">
+                    {client.performedProcedures.join(' · ')}
+                  </p>
+                </div>
+              )}
+              {client.nextAppointment && (
+                <div className="pt-2 border-t border-brand/25 text-xs text-brand-strong">
+                  <span className="font-semibold block mb-0.5">Próximo agendamento</span>
+                  <p className="text-sm font-semibold text-text-primary tabular-nums">
+                    {formatDateBR(client.nextAppointment.appointmentDate)} às{' '}
+                    {client.nextAppointment.appointmentTime} ·{' '}
+                    {client.nextAppointment.procedureName}
+                    {showProfessionalBadge && (
+                      <> ({client.nextAppointment.professional === 'lais' ? 'Laís' : 'Duda'})</>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <h3 className="text-sm font-semibold text-text-primary">
             Histórico completo de atendimentos
           </h3>

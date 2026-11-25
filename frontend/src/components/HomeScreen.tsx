@@ -1,19 +1,55 @@
-import { ArrowRight, Lock } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, Calendar, Lock, Menu, UserPlus, X } from 'lucide-react';
 import type { AuthUser, Professional } from '../../../shared/catalog';
 
 interface HomeScreenProps {
   currentUser: AuthUser | null;
   onSelectProfessional: (professional: Professional) => void;
   onOpenStaffAccess: () => void;
+  onOpenPreBooking: () => void;
+  onOpenInterestedLead: () => void;
 }
 
 export function HomeScreen({
   currentUser,
   onSelectProfessional,
   onOpenStaffAccess,
+  onOpenPreBooking,
+  onOpenInterestedLead,
 }: HomeScreenProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (
+        menuContainerRef.current &&
+        !menuContainerRef.current.contains(event.target as Node)
+      ) {
+        setMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuOpen]);
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background relative">
       <header className="w-full border-b border-border bg-surface/90 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-3 sm:gap-8">
           <span className="font-display text-xl sm:text-2xl font-bold tracking-wide text-brand-strong whitespace-nowrap shrink-0">
@@ -79,6 +115,62 @@ export function HomeScreen({
           </div>
         </div>
       </main>
+
+      {/* Menu discreto no canto inferior direito */}
+      <div
+        ref={menuContainerRef}
+        className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-30 flex flex-col items-end"
+      >
+        {menuOpen && (
+          <div
+            role="menu"
+            aria-label="Outras opções"
+            className="mb-3 w-64 bg-surface border border-brand/40 rounded-2xl shadow-dialog p-2 text-left"
+          >
+            <div className="px-3 py-1.5 border-b border-border/70 mb-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-brand-strong">
+                Outras opções
+              </span>
+            </div>
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenPreBooking();
+              }}
+              className="w-full min-h-[46px] px-3 py-2.5 rounded-xl flex items-center gap-3 text-sm font-medium text-text-primary hover:bg-brand-soft hover:text-brand-strong transition-colors"
+            >
+              <Calendar className="w-4 h-4 text-brand shrink-0" />
+              <span>Novo agendamento</span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenInterestedLead();
+              }}
+              className="w-full min-h-[46px] px-3 py-2.5 rounded-xl flex items-center gap-3 text-sm font-medium text-text-primary hover:bg-brand-soft hover:text-brand-strong transition-colors"
+            >
+              <UserPlus className="w-4 h-4 text-brand shrink-0" />
+              <span>Cadastrar interessada</span>
+            </button>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          aria-label={menuOpen ? 'Fechar outras opções' : 'Abrir outras opções'}
+          aria-expanded={menuOpen}
+          className="w-12 h-12 rounded-2xl bg-surface/95 hover:bg-surface border border-brand/40 text-brand-strong shadow-card flex items-center justify-center transition-all active:scale-95"
+        >
+          {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </div>
     </div>
   );
 }

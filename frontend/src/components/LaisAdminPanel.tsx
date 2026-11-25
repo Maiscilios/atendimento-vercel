@@ -19,7 +19,9 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Smartphone,
   Trash2,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react';
@@ -37,23 +39,28 @@ import {
   type AttendanceRecord,
   type AuthUser,
   type Professional,
+  type ServiceCategoryId,
 } from '../../../shared/catalog';
 import {
-  formatDaysSinceLastVisitBR,
   type DailyCommissionSummary,
+  type InterestedLead,
   type PanelClientSummary,
   type PayoutStatus,
   type ReturnRequest,
   type ReturnRequestStatus,
   type StudioNotification,
 } from '../../../shared/panelTypes';
+import type { PanelDeepLink } from '../App';
+import { useNotificationsStream } from '../hooks/useNotificationsStream';
 import {
   deleteAdminAttendance,
+  deleteAdminInterestedLead,
   fetchAdminAttendances,
   fetchAdminClients,
   fetchAdminCommissions,
   fetchAdminDashboard,
   fetchAdminDudaFinance,
+  fetchAdminInterestedLeads,
   fetchAdminNotifications,
   fetchAdminReturnRequests,
   markAdminNotificationsRead,
@@ -64,6 +71,9 @@ import { AgendaBookingModal, type AgendaBookingModalState } from './AgendaBookin
 import { AgendaCalendarTab, type AgendaInitialBookingRequest } from './AgendaCalendarTab';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ClientDetailModal } from './ClientDetailModal';
+import { ClientsTabView } from './ClientsTabView';
+import { InterestedLeadsTabView } from './InterestedLeadsTabView';
+import { NotificationSettingsModal } from './NotificationSettingsModal';
 import { PanelSidebarNav, type SidebarNavItem } from './PanelSidebarNav';
 import { computeRangeForPreset, PeriodFilterBar, type PeriodRange } from './PeriodFilterBar';
 
@@ -71,23 +81,40 @@ interface LaisAdminPanelProps {
   user: AuthUser;
   onGoHome: () => void;
   onLogout: () => void;
+  deepLink?: PanelDeepLink | null;
+  onDeepLinkConsumed?: () => void;
 }
 
-type AdminTab = 'home' | 'clients' | 'appointments' | 'agenda' | 'history' | 'finance';
+type AdminTab =
+  | 'home'
+  | 'clients'
+  | 'interested'
+  | 'appointments'
+  | 'agenda'
+  | 'history'
+  | 'finance';
 
 const TABS: Array<SidebarNavItem<AdminTab>> = [
   { id: 'home', label: 'Início', icon: LayoutDashboard },
   { id: 'clients', label: 'Minhas clientes', icon: Users },
+  { id: 'interested', label: 'Interessadas', icon: UserPlus },
   { id: 'appointments', label: 'Agendamentos', icon: CalendarClock },
   { id: 'agenda', label: 'Minha agenda', icon: Calendar },
   { id: 'history', label: 'Histórico de atendimentos', icon: History },
   { id: 'finance', label: 'Controle financeiro', icon: DollarSign },
 ];
 
-export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps) {
+export function LaisAdminPanel({
+  user,
+  onGoHome,
+  onLogout,
+  deepLink,
+  onDeepLinkConsumed,
+}: LaisAdminPanelProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [notifSettingsOpen, setNotifSettingsOpen] = useState(false);
   const [confirmResetDuda, setConfirmResetDuda] = useState(false);
   const [resetFeedback, setResetFeedback] = useState('');
   const [error, setError] = useState('');
@@ -110,17 +137,31 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
   const [selectedClient, setSelectedClient] = useState<PanelClientSummary | null>(null);
   const [brazilToday, setBrazilToday] = useState<string>(() => getBrazilTodayISO());
 
+  // Tab: Interessadas (exclusiva da administração)
+  const [interestedSearch, setInterestedSearch] = useState('');
+  const [interestedCategoryFilter, setInterestedCategoryFilter] = useState<
+    'all' | ServiceCategoryId
+  >('all');
+  const [interestedServiceFilter, setInterestedServiceFilter] = useState('all');
+  const [interestedPromotionsFilter, setInterestedPromotionsFilter] = useState<
+    'all' | 'yes' | 'no'
+  >('all');
+  const [interestedLeads, setInterestedLeads] = useState<InterestedLead[]>([]);
+  const [interestedLoading, setInterestedLoading] = useState(false);
+
   // Tab 3: Agendamentos & Minha agenda
   const [apptProfFilter, setApptProfFilter] = useState<'all' | Professional>('all');
   const [apptStatusFilter, setApptStatusFilter] = useState<'all' | ReturnRequestStatus>('all');
   const [appointments, setAppointments] = useState<ReturnRequest[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+  const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
   const [agendaBookingState, setAgendaBookingState] = useState<AgendaBookingModalState>({
     kind: 'closed',
   });
   const [agendaFeedback, setAgendaFeedback] = useState('');
   const [agendaFocusDate, setAgendaFocusDate] = useState<string | undefined>(undefined);
   const [agendaFocusProfessional, setAgendaFocusProfessional] = useState<Professional>('lais');
+  const [agendaRefreshSignal, setAgendaRefreshSignal] = useState(0);
   const [agendaInitialBooking, setAgendaInitialBooking] =
     useState<AgendaInitialBookingRequest | null>(null);
 
@@ -186,6 +227,29 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
       setClientsLoading(false);
     }
   }, [clientSearch, clientProfFilter]);
+
+  const loadInterestedLeads = useCallback(async () => {
+    setInterestedLoading(true);
+    setError('');
+    try {
+      const data = await fetchAdminInterestedLeads({
+        search: interestedSearch,
+        category: interestedCategoryFilter,
+        serviceId: interestedServiceFilter,
+        promotions: interestedPromotionsFilter,
+      });
+      setInterestedLeads(data.leads);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar interessadas.');
+    } finally {
+      setInterestedLoading(false);
+    }
+  }, [
+    interestedSearch,
+    interestedCategoryFilter,
+    interestedServiceFilter,
+    interestedPromotionsFilter,
+  ]);
 
   const loadAppointments = useCallback(async () => {
     setAppointmentsLoading(true);
@@ -271,19 +335,76 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
 
   useEffect(() => {
     void loadNotifications();
-    const timer = window.setInterval(() => {
-      void loadNotifications();
-    }, 30_000);
-    return () => window.clearInterval(timer);
   }, [loadNotifications]);
+
+  useNotificationsStream({
+    enabled: true,
+    onNotification: (notif) => {
+      setNotifications((prev) => {
+        if (prev.some((existing) => existing.id === notif.id)) return prev;
+        return [notif, ...prev].slice(0, 60);
+      });
+      if (
+        notif.type === 'return_request' ||
+        notif.type === 'public_pre_booking' ||
+        notif.type === 'joint_request' ||
+        notif.type === 'joint_proposed' ||
+        notif.type === 'joint_approved'
+      ) {
+        void loadAppointments();
+      }
+      if (
+        notif.type === 'joint_approved' ||
+        notif.type === 'joint_updated' ||
+        notif.type === 'appointment_updated' ||
+        notif.type === 'appointment_cancelled'
+      ) {
+        setAgendaRefreshSignal((n) => n + 1);
+      }
+    },
+    onReconnect: () => {
+      void loadNotifications();
+      if (activeTab === 'appointments') void loadAppointments();
+      if (activeTab === 'agenda') setAgendaRefreshSignal((n) => n + 1);
+    },
+  });
+
+  useEffect(() => {
+    if (!deepLink) return;
+    if (deepLink.tab === 'agenda') {
+      if (deepLink.targetDate) {
+        setAgendaFocusDate(deepLink.targetDate);
+      }
+      if (deepLink.targetProfessional) {
+        setAgendaFocusProfessional(deepLink.targetProfessional);
+      }
+      setActiveTab('agenda');
+      setAgendaRefreshSignal((n) => n + 1);
+    } else {
+      setApptProfFilter('all');
+      setApptStatusFilter('all');
+      setHighlightedRequestId(deepLink.returnRequestId ?? null);
+      setActiveTab('appointments');
+    }
+    onDeepLinkConsumed?.();
+  }, [deepLink, onDeepLinkConsumed]);
 
   useEffect(() => {
     if (activeTab === 'home') void loadHome();
     else if (activeTab === 'clients') void loadClients();
+    else if (activeTab === 'interested') void loadInterestedLeads();
     else if (activeTab === 'appointments') void loadAppointments();
     else if (activeTab === 'history') void loadHistory();
     else if (activeTab === 'finance') void loadFinance();
-  }, [activeTab, loadHome, loadClients, loadAppointments, loadHistory, loadFinance]);
+  }, [
+    activeTab,
+    loadHome,
+    loadClients,
+    loadInterestedLeads,
+    loadAppointments,
+    loadHistory,
+    loadFinance,
+  ]);
 
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
 
@@ -298,6 +419,29 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
     }
   }
 
+  function handleOpenNotificationTarget(notif: StudioNotification) {
+    if (!notif.read) {
+      void handleMarkNotificationRead(notif.id);
+    }
+    setNotificationsOpen(false);
+    if (notif.targetTab === 'agenda') {
+      if (notif.targetDate) {
+        setAgendaFocusDate(notif.targetDate);
+      }
+      if (notif.targetProfessional) {
+        setAgendaFocusProfessional(notif.targetProfessional);
+      }
+      setActiveTab('agenda');
+      setAgendaRefreshSignal((n) => n + 1);
+    } else {
+      setApptProfFilter('all');
+      setApptStatusFilter('all');
+      setHighlightedRequestId(notif.relatedReturnRequestId ?? null);
+      setActiveTab('appointments');
+      void loadAppointments();
+    }
+  }
+
   async function handleDeleteAttendance(id: string) {
     setError('');
     try {
@@ -307,6 +451,36 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao excluir atendimento.');
     }
+  }
+
+  async function handleDeleteInterestedLead(id: string) {
+    setError('');
+    try {
+      await deleteAdminInterestedLead(id);
+      setInterestedLeads((prev) => prev.filter((item) => item.id !== id));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Erro ao excluir cadastro de interessada.'
+      );
+    }
+  }
+
+  function handleScheduleInterestedLead(lead: InterestedLead) {
+    const hasLaisService = lead.services.some((s) => s.professional === 'lais');
+    const targetProf: Professional = hasLaisService ? 'lais' : 'duda';
+    const initialProcedureNames = lead.services
+      .filter((s) => s.professional === targetProf)
+      .map((s) => s.name);
+
+    setAgendaFocusProfessional(targetProf);
+    setAgendaInitialBooking({
+      requestId: Date.now(),
+      clientName: lead.name,
+      whatsapp: lead.whatsapp,
+      professional: targetProf,
+      initialProcedureNames,
+    });
+    setActiveTab('agenda');
   }
 
   async function handleTogglePayoutStatus(date: string, current: PayoutStatus) {
@@ -387,6 +561,15 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             </button>
             <button
               type="button"
+              onClick={() => setNotifSettingsOpen(true)}
+              aria-label="Notificações no celular"
+              className="min-h-[40px] px-2 sm:px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap btn-ghost"
+            >
+              <Smartphone className="w-4 h-4" />
+              <span className="hidden md:inline">Celular</span>
+            </button>
+            <button
+              type="button"
               onClick={onGoHome}
               className="min-h-[40px] px-2 sm:px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap btn-secondary" aria-label="Tela inicial"
             >
@@ -413,12 +596,28 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             </button>
 
             {notificationsOpen && (
-              <div className="absolute right-0 top-12 w-80 sm:w-96 bg-surface border border-border rounded-2xl shadow-dialog z-40 overflow-hidden">
+              <div className="absolute right-0 top-12 w-80 sm:w-[26rem] bg-surface border border-border rounded-2xl shadow-dialog z-40 overflow-hidden">
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2 bg-background">
-                  <span className="text-sm font-semibold text-brand-strong">
-                    Notificações da Laís
-                  </span>
-                  <div className="flex items-center gap-2">
+                  <div className="min-w-0">
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-brand">
+                      MAIS CÍLIOS
+                    </span>
+                    <span className="text-sm font-semibold text-brand-strong">
+                      Notificações da Laís
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificationsOpen(false);
+                        setNotifSettingsOpen(true);
+                      }}
+                      className="px-2 py-1 rounded-lg text-[11px] font-semibold btn-secondary inline-flex items-center gap-1"
+                    >
+                      <Smartphone className="w-3 h-3" />
+                      <span>Celular</span>
+                    </button>
                     {unreadNotificationsCount > 0 && (
                       <button
                         type="button"
@@ -438,7 +637,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                     </button>
                   </div>
                 </div>
-                <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                <div className="max-h-96 overflow-y-auto divide-y divide-border">
                   {notifications.length === 0 ? (
                     <p className="p-5 text-center text-xs text-text-secondary">
                       Nenhuma notificação no momento.
@@ -447,35 +646,62 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                     notifications.map((notif) => (
                       <div
                         key={notif.id}
-                        className={`p-3.5 space-y-1.5 text-left ${
+                        className={`p-3.5 space-y-2 text-left ${
                           notif.read ? 'bg-surface' : 'bg-brand-soft/60'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-xs font-bold text-brand-strong">
-                            {notif.title}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-strong">
+                              {notif.requestTypeLabel || notif.title}
+                            </span>
+                            {notif.isJoint && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-brand-soft border border-brand/40 text-[10px] font-bold uppercase text-brand-strong">
+                                Conjunto · Laís + Duda
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-text-secondary tabular-nums shrink-0">
                             {formatBrazilTimeBR(notif.createdAt)}
                           </span>
                         </div>
-                        <p className="text-xs text-text-primary leading-relaxed">
-                          {notif.message}
-                        </p>
+
+                        {notif.clientName && (
+                          <p className="text-xs font-bold text-text-primary">
+                            Cliente: {notif.clientName}
+                          </p>
+                        )}
+
+                        {notif.procedures && notif.procedures.length > 0 && (
+                          <p className="text-xs text-text-secondary">
+                            <strong className="text-text-primary">Procedimentos:</strong>{' '}
+                            {notif.procedures.join(', ')}
+                          </p>
+                        )}
+
+                        {notif.desiredDate && (
+                          <p className="text-xs text-text-secondary tabular-nums">
+                            <strong className="text-text-primary">Data desejada:</strong>{' '}
+                            {formatDateBR(notif.desiredDate)}
+                            {notif.desiredTime ? ` às ${notif.desiredTime}` : ''}
+                          </p>
+                        )}
+
+                        {!notif.clientName && (
+                          <p className="text-xs text-text-primary leading-relaxed">
+                            {notif.message}
+                          </p>
+                        )}
+
                         <div className="flex items-center justify-between pt-1">
                           <button
                             type="button"
-                            onClick={() => {
-                              if (!notif.read) {
-                                void handleMarkNotificationRead(notif.id);
-                              }
-                              setNotificationsOpen(false);
-                              setActiveTab('appointments');
-                              void loadAppointments();
-                            }}
+                            onClick={() => handleOpenNotificationTarget(notif)}
                             className="text-xs font-semibold text-brand-strong hover:underline"
                           >
-                            Ver em Agendamentos
+                            {notif.targetTab === 'agenda'
+                              ? 'Ver na Minha agenda'
+                              : 'Ver em Agendamentos'}
                           </button>
                           {!notif.read && (
                             <button
@@ -763,141 +989,53 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
 
         {/* 2. MINHAS CLIENTES */}
         {activeTab === 'clients' && (
-          <div className="space-y-5">
-            <div className="bg-surface border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 text-brand absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    placeholder="Pesquisar cliente por nome ou WhatsApp..."
-                    className="w-full min-h-[44px] pl-10 pr-4 py-2 border rounded-xl field-control text-base"
-                  />
-                </div>
+          <ClientsTabView
+            clients={clients}
+            loading={clientsLoading}
+            search={clientSearch}
+            onSearchChange={setClientSearch}
+            brazilToday={brazilToday}
+            onSelectClient={setSelectedClient}
+            onScheduleClient={(client) => {
+              const targetProf: Professional =
+                clientProfFilter !== 'all'
+                  ? clientProfFilter
+                  : client.professionals.includes('lais')
+                    ? 'lais'
+                    : client.professionals[0] || 'lais';
+              setAgendaFocusProfessional(targetProf);
+              setAgendaInitialBooking({
+                requestId: Date.now(),
+                clientName: client.clientName,
+                whatsapp: client.whatsapp,
+                professional: targetProf,
+              });
+              setActiveTab('agenda');
+            }}
+            showProfessionalFilter
+            professionalFilter={clientProfFilter}
+            onProfessionalFilterChange={setClientProfFilter}
+            emptySubtitle="O cadastro das clientes será montado automaticamente conforme os atendimentos forem confirmados."
+          />
+        )}
 
-                <div className="flex items-center gap-1 p-1 bg-brand-soft rounded-xl self-start sm:self-auto">
-                  {(
-                    [
-                      { id: 'all', label: 'Todas' },
-                      { id: 'lais', label: 'Laís' },
-                      { id: 'duda', label: 'Duda' },
-                    ] as const
-                  ).map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setClientProfFilter(opt.id)}
-                      className={`min-h-[36px] px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                        clientProfFilter === opt.id
-                          ? 'tab-active'
-                          : 'tab-idle'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <span className="text-xs font-medium text-text-secondary tabular-nums">
-                {clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}
-              </span>
-            </div>
-
-            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-              {clientsLoading ? (
-                <div className="p-8 text-center text-sm text-text-secondary">
-                  Carregando clientes...
-                </div>
-              ) : clients.length === 0 ? (
-                <div className="p-8 text-center space-y-1.5">
-                  <p className="text-base font-medium text-text-primary">
-                    Nenhuma cliente encontrada
-                  </p>
-                  <p className="text-sm text-text-secondary">
-                    O cadastro das clientes será montado automaticamente conforme os atendimentos forem confirmados.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {clients.map((client) => (
-                    <div
-                      key={client.key}
-                      className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-background transition-colors"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedClient(client)}
-                          className="text-left text-base font-semibold text-brand-strong hover:underline"
-                        >
-                          {client.clientName}
-                        </button>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary tabular-nums">
-                          <span>
-                            {client.totalVisits}{' '}
-                            {client.totalVisits === 1 ? 'atendimento' : 'atendimentos'}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>Último: {formatDateBR(client.lastVisitDate)}</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-semibold text-brand-strong">
-                            {formatDaysSinceLastVisitBR(client.lastVisitDate, brazilToday)}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>
-                            {client.professionals
-                              .map((p) => (p === 'lais' ? 'Laís' : 'Duda'))
-                              .join(' e ')}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>Toque no nome para ver cadastro</span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-                        <a
-                          href={buildWhatsAppLink(client.whatsapp)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 transition-colors tabular-nums btn-success-soft"
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                          <span>{client.whatsapp}</span>
-                        </a>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const targetProf: Professional =
-                              clientProfFilter !== 'all'
-                                ? clientProfFilter
-                                : client.professionals.includes('lais')
-                                  ? 'lais'
-                                  : client.professionals[0] || 'lais';
-                            setAgendaFocusProfessional(targetProf);
-                            setAgendaInitialBooking({
-                              requestId: Date.now(),
-                              clientName: client.clientName,
-                              whatsapp: client.whatsapp,
-                              professional: targetProf,
-                            });
-                            setActiveTab('agenda');
-                          }}
-                          className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors btn-primary"
-                        >
-                          <CalendarPlus className="w-4 h-4" />
-                          <span>Agendar</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+        {/* INTERESSADAS (EXCLUSIVO DA ADMINISTRAÇÃO) */}
+        {activeTab === 'interested' && (
+          <InterestedLeadsTabView
+            leads={interestedLeads}
+            loading={interestedLoading}
+            search={interestedSearch}
+            onSearchChange={setInterestedSearch}
+            categoryFilter={interestedCategoryFilter}
+            onCategoryFilterChange={setInterestedCategoryFilter}
+            serviceFilter={interestedServiceFilter}
+            onServiceFilterChange={setInterestedServiceFilter}
+            promotionsFilter={interestedPromotionsFilter}
+            onPromotionsFilterChange={setInterestedPromotionsFilter}
+            onRefresh={() => void loadInterestedLeads()}
+            onScheduleLead={handleScheduleInterestedLead}
+            onDeleteLead={handleDeleteInterestedLead}
+          />
         )}
 
         {/* 3. AGENDAMENTOS */}
@@ -1009,8 +1147,9 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                     const profName = item.professional === 'lais' ? 'Laís' : 'Duda';
                     const partnerName = item.professional === 'lais' ? 'Duda' : 'Laís';
                     const targetDate = item.proposedDate || item.returnDate;
+                    const requestedTime = item.proposedTime || item.desiredTime;
                     const message = targetDate
-                      ? `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vi sua preferência de manutenção com ${profName} para ${formatDateBR(targetDate)}${item.proposedTime ? ` às ${item.proposedTime}` : ''}. Vamos confirmar seu horário?`
+                      ? `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vi sua solicitação com ${profName} para ${formatDateBR(targetDate)}${requestedTime ? ` às ${requestedTime}` : ''}. Vamos confirmar seu horário?`
                       : `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vamos combinar a data da sua próxima manutenção com ${profName}?`;
 
                     const statusLabel = isConfirmed
@@ -1027,7 +1166,11 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                     return (
                       <div
                         key={item.id}
-                        className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-background"
+                        className={`p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-colors ${
+                          highlightedRequestId === item.id
+                            ? 'bg-brand-soft/60 ring-2 ring-inset ring-brand/40'
+                            : 'hover:bg-background'
+                        }`}
                       >
                         <div className="space-y-2 min-w-0">
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -1071,6 +1214,11 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                           </p>
 
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-primary">
+                            {item.source === 'public_link' && (
+                              <span className="text-xs font-semibold text-brand-strong">
+                                Pré-agendamento
+                              </span>
+                            )}
                             <span>
                               Prazo:{' '}
                               <strong>
@@ -1085,6 +1233,14 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                                 </strong>
                               </span>
                             )}
+                            {item.desiredTime && (
+                              <span className="tabular-nums">
+                                Horário desejado:{' '}
+                                <strong className="text-brand-strong">
+                                  {item.desiredTime}
+                                </strong>
+                              </span>
+                            )}
                             {item.proposedDate && item.proposedTime && (
                               <span className="tabular-nums">
                                 Horário sincronizado:{' '}
@@ -1094,6 +1250,11 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
                               </span>
                             )}
                           </div>
+                          {item.notes && (
+                            <p className="text-xs text-text-secondary">
+                              Obs. da cliente: <strong className="text-text-primary">{item.notes}</strong>
+                            </p>
+                          )}
 
                           {item.isJoint && item.partner && (
                             <div className="p-2.5 rounded-xl bg-brand-soft/75 border border-brand/35 text-xs text-text-secondary space-y-0.5">
@@ -1187,6 +1348,7 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
             initialProfessional={agendaFocusProfessional}
             initialBooking={agendaInitialBooking}
             onInitialBookingConsumed={() => setAgendaInitialBooking(null)}
+            refreshSignal={agendaRefreshSignal}
           />
         )}
 
@@ -1716,6 +1878,13 @@ export function LaisAdminPanel({ user, onGoHome, onLogout }: LaisAdminPanelProps
         isOpen={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
         userName={user.displayName}
+      />
+
+      <NotificationSettingsModal
+        isOpen={notifSettingsOpen}
+        onClose={() => setNotifSettingsOpen(false)}
+        userName={user.displayName}
+        professional={user.professional}
       />
 
       <AgendaBookingModal

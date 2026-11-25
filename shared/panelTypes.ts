@@ -3,6 +3,7 @@ import {
   type AttendanceRecord,
   type Professional,
   type ReturnOption,
+  type ServiceCategoryId,
 } from './catalog';
 
 export type PayoutStatus = 'pending' | 'paid';
@@ -32,6 +33,14 @@ export interface SetupStatus {
   setupKeyRequired?: boolean;
 }
 
+export interface ClientNextAppointmentSummary {
+  id: string;
+  professional: Professional;
+  appointmentDate: string;
+  appointmentTime: string;
+  procedureName: string;
+}
+
 export interface PanelClientSummary {
   key: string;
   clientName: string;
@@ -41,6 +50,9 @@ export interface PanelClientSummary {
   totalSpent: number;
   lastVisitDate: string;
   professionals: Professional[];
+  serviceCategories: ServiceCategoryId[];
+  performedProcedures: string[];
+  nextAppointment: ClientNextAppointmentSummary | null;
   attendances: AttendanceRecord[];
 }
 
@@ -103,7 +115,7 @@ export interface ReturnRequestPartnerSummary {
 
 export interface ReturnRequest {
   id: string;
-  sourceAttendanceId: string;
+  sourceAttendanceId: string | null;
   clientId: string | null;
   professional: Professional;
   clientName: string;
@@ -112,6 +124,9 @@ export interface ReturnRequest {
   serviceDate: string;
   returnOption: ReturnOption;
   returnDate: string | null;
+  desiredTime?: string | null;
+  source?: 'attendance_form' | 'public_link';
+  notes?: string;
   procedures: string[];
   isJoint: boolean;
   jointGroupId: string | null;
@@ -125,14 +140,69 @@ export interface ReturnRequest {
   updatedAt: string;
 }
 
+export type StudioNotificationType =
+  | 'return_request'
+  | 'public_pre_booking'
+  | 'joint_request'
+  | 'joint_proposed'
+  | 'joint_approved'
+  | 'joint_updated'
+  | 'appointment_updated'
+  | 'appointment_cancelled'
+  | 'test_notification';
+
 export interface StudioNotification {
   id: string;
   recipient: Professional;
-  type: 'return_request' | 'joint_proposed' | 'joint_approved' | 'joint_updated';
+  type: StudioNotificationType;
   title: string;
   message: string;
+  requestTypeLabel?: string;
+  clientName?: string;
+  procedures?: string[];
+  desiredDate?: string | null;
+  desiredTime?: string | null;
+  isJoint?: boolean;
   relatedReturnRequestId: string | null;
+  relatedAppointmentId?: string | null;
   jointGroupId: string | null;
+  targetTab?: 'appointments' | 'agenda';
+  targetDate?: string | null;
+  targetProfessional?: Professional | null;
   read: boolean;
   createdAt: string;
+}
+
+export interface PushSubscriptionInfo {
+  id: string;
+  deviceLabel: string;
+  createdAt: string;
+  updatedAt: string;
+  lastSuccessAt: string | null;
+}
+
+export interface PushStatusResponse {
+  vapidPublicKey: string;
+  configured: boolean;
+  activeSubscriptionsCount: number;
+  subscriptions: PushSubscriptionInfo[];
+}
+
+export interface InterestedLeadService {
+  id: string;
+  name: string;
+  professional: Professional;
+  category: ServiceCategoryId;
+}
+
+export interface InterestedLead {
+  id: string;
+  name: string;
+  whatsapp: string;
+  whatsappDigits: string;
+  services: InterestedLeadService[];
+  serviceCategories: ServiceCategoryId[];
+  acceptsPromotions: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -5,13 +5,17 @@ import type {
   LashAttendanceType,
   Professional,
   ReturnOption,
+  ServiceCategoryId,
 } from '../../../shared/catalog';
 import type {
   AgendaAppointment,
   DailyCommissionSummary,
   DailyMetricPoint,
+  InterestedLead,
   PanelClientSummary,
   PayoutStatus,
+  PushStatusResponse,
+  PushSubscriptionInfo,
   ReturnRequest,
   ReturnRequestStatus,
   SetupStatus,
@@ -625,3 +629,140 @@ export async function markAdminNotificationsRead(id?: string): Promise<void> {
     body: JSON.stringify(id ? { id } : {}),
   });
 }
+
+// ============================================================================
+// WEB PUSH NOTIFICATIONS API
+// ============================================================================
+
+export async function fetchVapidPublicKey(): Promise<string> {
+  const data = await apiFetch<{ publicKey: string }>('/api/push/vapid-public-key');
+  return data.publicKey;
+}
+
+export async function fetchPushStatus(): Promise<PushStatusResponse> {
+  return apiFetch<PushStatusResponse>('/api/push/status');
+}
+
+export async function subscribePushDevice(payload: {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  deviceLabel?: string;
+}): Promise<{ ok: boolean; subscription: PushSubscriptionInfo }> {
+  return apiFetch<{ ok: boolean; subscription: PushSubscriptionInfo }>('/api/push/subscribe', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function unsubscribePushDevice(
+  endpoint?: string
+): Promise<{ ok: boolean; removed: number }> {
+  return apiFetch<{ ok: boolean; removed: number }>('/api/push/unsubscribe', {
+    method: 'POST',
+    body: JSON.stringify(endpoint ? { endpoint } : {}),
+  });
+}
+
+export async function sendTestPushNotification(): Promise<{
+  ok: boolean;
+  notification: StudioNotification;
+  activeSubscriptionsCount: number;
+}> {
+  return apiFetch<{
+    ok: boolean;
+    notification: StudioNotification;
+    activeSubscriptionsCount: number;
+  }>('/api/push/test', {
+    method: 'POST',
+  });
+}
+
+// ============================================================================
+// PUBLIC PRE-BOOKINGS & INTERESTED LEADS ("INTERESSADAS")
+// ============================================================================
+
+export interface PublicPreBookingPayload {
+  clientId?: string | null;
+  clientName: string;
+  whatsapp: string;
+  serviceIds: string[];
+  serviceAttendanceTypes?: Record<string, LashAttendanceType>;
+  desiredDate: string;
+  desiredTime: string;
+  notes?: string;
+  idempotencyKey?: string;
+}
+
+export interface PublicPreBookingConfirmation {
+  clientName: string;
+  desiredDate: string;
+  desiredTime: string;
+  isJoint: boolean;
+  laisProcedures: string[];
+  dudaProcedures: string[];
+  requests: ReturnRequest[];
+}
+
+export async function submitPublicPreBooking(
+  payload: PublicPreBookingPayload
+): Promise<PublicPreBookingConfirmation> {
+  const data = await apiFetch<{ preBooking: PublicPreBookingConfirmation }>(
+    '/api/pre-bookings',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+  return data.preBooking;
+}
+
+export interface SubmitInterestedLeadPayload {
+  name: string;
+  whatsapp: string;
+  serviceIds: string[];
+  acceptsPromotions: boolean;
+  idempotencyKey?: string;
+}
+
+export async function submitInterestedLead(
+  payload: SubmitInterestedLeadPayload
+): Promise<InterestedLead> {
+  const data = await apiFetch<{ lead: InterestedLead }>('/api/interested-leads', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return data.lead;
+}
+
+export async function fetchAdminInterestedLeads(params?: {
+  search?: string;
+  serviceId?: string;
+  category?: ServiceCategoryId | 'all';
+  promotions?: 'all' | 'yes' | 'no';
+}): Promise<{ leads: InterestedLead[] }> {
+  const query = new URLSearchParams();
+  if (params?.search?.trim()) query.set('search', params.search.trim());
+  if (params?.serviceId && params.serviceId !== 'all') {
+    query.set('serviceId', params.serviceId);
+  }
+  if (params?.category && params.category !== 'all') {
+    query.set('category', params.category);
+  }
+  if (params?.promotions && params.promotions !== 'all') {
+    query.set('promotions', params.promotions);
+  }
+  const qs = query.toString();
+  return apiFetch<{ leads: InterestedLead[] }>(
+    `/api/admin/interested-leads${qs ? `?${qs}` : ''}`
+  );
+}
+
+export async function deleteAdminInterestedLead(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(
+    `/api/admin/interested-leads/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+

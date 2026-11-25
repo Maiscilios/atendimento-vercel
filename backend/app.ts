@@ -8,9 +8,11 @@ import {
   DUDA_RETURN_OPTIONS,
   LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
+  SERVICE_CATEGORIES,
   TIME_SLOTS,
   addDaysToISO,
   calculateReturnDateISO,
+  classifyServiceCategory,
   extractDigits,
   findStudioServiceById,
   formatBrazilPhone,
@@ -24,11 +26,14 @@ import type {
   ExtraReturnService,
   Professional,
   ReturnOption,
+  ServiceCategoryId,
   ServiceItem,
 } from '../shared/catalog.ts';
 import type {
+  AgendaAppointment,
   DailyCommissionSummary,
   DailyMetricPoint,
+  InterestedLeadService,
   PanelClientSummary,
   PayoutStatus,
   ReturnRequestStatus,
@@ -38,15 +43,23 @@ import {
   cancelAgendaAppointment,
   confirmAttendanceReturnToAgenda,
   createAgendaAppointment,
+  createAndPublishStudioNotification,
   deleteAgendaAppointment,
+  deleteInterestedLead,
+  deletePushSubscriptionForUser,
   findConfirmedSlotOwner,
   getAgendaAppointmentById,
   getReturnRequestById,
+  insertInterestedLead,
+  insertPublicPreBooking,
   listAgendaAppointments,
+  listInterestedLeads,
+  listPushSubscriptionsForUser,
   listReturnRequests,
   listStudioNotifications,
   markStudioNotificationsRead,
   updateAgendaAppointment,
+  upsertPushSubscription,
   initializeDatabase,
   configureInitialPassword,
   createSession,
@@ -67,6 +80,13 @@ import {
   upsertCommissionPayoutStatus,
   verifyPassword,
 } from './db.ts';
+import { subscribeNotificationStream } from './notificationsBus.ts';
+import {
+  getPublicVapidKey,
+  initializePushSubsystem,
+  isValidPushEndpoint,
+  isValidPushKey,
+} from './push.ts';
 
 const SESSION_COOKIE_NAME = 'maiscilios_session';
 
@@ -178,7 +198,14 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function buildPanelClients(records: AttendanceRecord[]): PanelClientSummary[] {
+function normalizeClientNameCompare(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function buildPanelClients(
+  records: AttendanceRecord[],
+  upcomingAppointments: AgendaAppointment[] = [],
+): PanelClientSummary[] {
   const clientMap = new Map<string, PanelClientSummary>();
   for (const rec of records) {
     const key =
@@ -197,6 +224,9 @@ function buildPanelClients(records: AttendanceRecord[]): PanelClientSummary[] {
         totalSpent: roundMoney(rec.totalPaid),
         lastVisitDate: rec.serviceDate,
         professionals: [rec.professional],
+        serviceCategories: [],
+        performedProcedures: [],
+        nextAppointment: null,
         attendances: [rec],
       });
     } else {
@@ -214,7 +244,72 @@ function buildPanelClients(records: AttendanceRecord[]): PanelClientSummary[] {
     }
   }
 
-  return Array.from(clientMap.values()).sort((a, b) =>
+  const clients = Array.from(clientMap.values());
+
+  // Count how many distinct clients share each phone so ambiguous numbers require a name match
+  const phoneClientCounts = new Map<string, number>();
+  for (const c of clients) {
+    const digits = normalizeWhatsAppDigits(c.whatsappDigits || c.whatsapp);
+    if (digits) {
+      phoneClientCounts.set(digits, (phoneClientCounts.get(digits) ?? 0) + 1);
+    }
+  }
+
+  const categoryOrder = SERVICE_CATEGORIES.map((c) => c.id);
+
+  for (const client of clients) {
+    const categoriesSet = new Set<ServiceCategoryId>();
+    const proceduresSeen = new Set<string>();
+    const proceduresList: string[] = [];
+
+    for (const att of client.attendances) {
+      for (const svc of att.services) {
+        const cat = classifyServiceCategory(svc, att.professional);
+        if (cat) {
+          categoriesSet.add(cat);
+        }
+        const trimmedName = svc.name.trim();
+        if (trimmedName && !proceduresSeen.has(trimmedName)) {
+          proceduresSeen.add(trimmedName);
+          proceduresList.push(trimmedName);
+        }
+      }
+    }
+
+    client.serviceCategories = categoryOrder.filter((id) =>
+      categoriesSet.has(id),
+    );
+    client.performedProcedures = proceduresList;
+
+    const clientDigits = normalizeWhatsAppDigits(
+      client.whatsappDigits || client.whatsapp,
+    );
+    const clientNormName = normalizeClientNameCompare(client.clientName);
+    const singleOwnerOfPhone =
+      Boolean(clientDigits) && (phoneClientCounts.get(clientDigits) ?? 0) === 1;
+
+    const nextAppt = upcomingAppointments.find((appt) => {
+      if (appt.status !== 'confirmed') return false;
+      const apptDigits = normalizeWhatsAppDigits(
+        appt.whatsappDigits || appt.whatsapp,
+      );
+      if (!clientDigits || apptDigits !== clientDigits) return false;
+      const apptNormName = normalizeClientNameCompare(appt.clientName);
+      return apptNormName === clientNormName || singleOwnerOfPhone;
+    });
+
+    client.nextAppointment = nextAppt
+      ? {
+          id: nextAppt.id,
+          professional: nextAppt.professional,
+          appointmentDate: nextAppt.appointmentDate,
+          appointmentTime: nextAppt.appointmentTime,
+          procedureName: nextAppt.procedureName,
+        }
+      : null;
+  }
+
+  return clients.sort((a, b) =>
     b.lastVisitDate.localeCompare(a.lastVisitDate),
   );
 }
@@ -311,6 +406,7 @@ async function buildDailyCommissions(
 }
 
 export function createApiApp() {
+  initializePushSubsystem();
   const app = express();
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '1mb' }));
@@ -539,6 +635,7 @@ export function createApiApp() {
         preferredTimes?: unknown;
         serviceDate?: unknown;
         idempotencyKey?: unknown;
+        source?: unknown;
       };
 
       const professional = body.professional;
@@ -719,6 +816,9 @@ export function createApiApp() {
           ? body.idempotencyKey.trim().slice(0, 128)
           : null;
 
+      const source =
+        body.source === 'public_link' ? 'public_link' : 'attendance_form';
+
       const record = await insertAttendance({
         clientId,
         professional: professional as Professional,
@@ -738,6 +838,7 @@ export function createApiApp() {
         preferredTimes,
         returnStatus,
         idempotencyKey,
+        source,
       });
 
       res.status(201).json({
@@ -754,6 +855,252 @@ export function createApiApp() {
           extraReturnServices: record.extraReturnServices ?? [],
         },
       });
+    }),
+  );
+
+  // Standalone public pre-booking route (does NOT count as attendance, revenue, or commission)
+  app.post(
+    '/api/pre-bookings',
+    asyncHandler(async (req: Request, res: Response) => {
+      const body = req.body as {
+        clientId?: unknown;
+        clientName?: unknown;
+        whatsapp?: unknown;
+        serviceIds?: unknown;
+        serviceAttendanceTypes?: unknown;
+        desiredDate?: unknown;
+        desiredTime?: unknown;
+        notes?: unknown;
+        idempotencyKey?: unknown;
+      };
+
+      if (
+        typeof body.clientName !== 'string' ||
+        body.clientName.trim().length < 2
+      ) {
+        res.status(400).json({ error: 'Informe seu nome completo.' });
+        return;
+      }
+      const clientName = body.clientName.trim().slice(0, 120);
+
+      if (typeof body.whatsapp !== 'string') {
+        res
+          .status(400)
+          .json({ error: 'Informe um número de WhatsApp válido.' });
+        return;
+      }
+      const whatsappDigits = normalizeWhatsAppDigits(body.whatsapp);
+      if (whatsappDigits.length < 10 || whatsappDigits.length > 11) {
+        res
+          .status(400)
+          .json({ error: 'Informe o WhatsApp com DDD (10 ou 11 dígitos).' });
+        return;
+      }
+      const whatsapp = formatBrazilPhone(whatsappDigits);
+      const clientId =
+        typeof body.clientId === 'string' && body.clientId.trim().length > 0
+          ? body.clientId.trim().slice(0, 120)
+          : null;
+
+      if (!Array.isArray(body.serviceIds) || body.serviceIds.length === 0) {
+        res
+          .status(400)
+          .json({ error: 'Selecione pelo menos um procedimento desejado.' });
+        return;
+      }
+
+      if (!isValidISODate(body.desiredDate)) {
+        res
+          .status(400)
+          .json({ error: 'Selecione a data desejada para o agendamento.' });
+        return;
+      }
+
+      if (!isValidManualTime(body.desiredTime)) {
+        res.status(400).json({
+          error: 'Informe o horário desejado no formato HH:MM (ex: 14:30).',
+        });
+        return;
+      }
+
+      const rawAttendanceTypes =
+        body.serviceAttendanceTypes &&
+        typeof body.serviceAttendanceTypes === 'object' &&
+        !Array.isArray(body.serviceAttendanceTypes)
+          ? (body.serviceAttendanceTypes as Record<string, unknown>)
+          : {};
+
+      const laisProcedures: string[] = [];
+      const dudaProcedures: string[] = [];
+      const seenIds = new Set<string>();
+
+      for (const rawId of body.serviceIds) {
+        if (typeof rawId !== 'string' || seenIds.has(rawId)) continue;
+        const found = findStudioServiceById(rawId);
+        if (!found) continue;
+        seenIds.add(rawId);
+
+        if (
+          found.professional === 'lais' &&
+          LAIS_LASH_TYPE_SERVICE_IDS.includes(found.id)
+        ) {
+          const attendanceType = rawAttendanceTypes[found.id];
+          if (
+            attendanceType !== 'Aplicação' &&
+            attendanceType !== 'Manutenção'
+          ) {
+            res.status(400).json({
+              error: `Selecione Aplicação ou Manutenção para ${found.name}.`,
+            });
+            return;
+          }
+          laisProcedures.push(`${found.name} — ${attendanceType}`);
+        } else if (found.professional === 'lais') {
+          laisProcedures.push(found.name);
+        } else {
+          dudaProcedures.push(found.name);
+        }
+      }
+
+      if (laisProcedures.length === 0 && dudaProcedures.length === 0) {
+        res
+          .status(400)
+          .json({ error: 'Selecione pelo menos um procedimento válido.' });
+        return;
+      }
+
+      const notes =
+        typeof body.notes === 'string' ? body.notes.trim().slice(0, 500) : '';
+      const idempotencyKey =
+        typeof body.idempotencyKey === 'string' &&
+        body.idempotencyKey.trim().length > 0
+          ? body.idempotencyKey.trim().slice(0, 128)
+          : null;
+
+      const result = await insertPublicPreBooking({
+        clientId,
+        clientName,
+        whatsapp,
+        whatsappDigits,
+        laisProcedures,
+        dudaProcedures,
+        desiredDate: body.desiredDate,
+        desiredTime: body.desiredTime,
+        notes,
+        idempotencyKey,
+      });
+
+      res.status(201).json({
+        preBooking: {
+          clientName: result.clientName,
+          desiredDate: result.desiredDate,
+          desiredTime: result.desiredTime,
+          isJoint: result.isJoint,
+          laisProcedures,
+          dudaProcedures,
+          requests: result.requests,
+        },
+      });
+    }),
+  );
+
+  // Public interested-lead registration (does NOT count as attendance, revenue, or commission)
+  app.post(
+    '/api/interested-leads',
+    asyncHandler(async (req: Request, res: Response) => {
+      const body = req.body as {
+        name?: unknown;
+        whatsapp?: unknown;
+        serviceIds?: unknown;
+        acceptsPromotions?: unknown;
+        idempotencyKey?: unknown;
+      };
+
+      if (typeof body.name !== 'string' || body.name.trim().length < 2) {
+        res.status(400).json({ error: 'Informe seu nome completo.' });
+        return;
+      }
+      const name = body.name.trim().slice(0, 120);
+
+      if (typeof body.whatsapp !== 'string') {
+        res
+          .status(400)
+          .json({ error: 'Informe um número de WhatsApp válido.' });
+        return;
+      }
+      const whatsappDigits = normalizeWhatsAppDigits(body.whatsapp);
+      if (whatsappDigits.length < 10 || whatsappDigits.length > 11) {
+        res
+          .status(400)
+          .json({ error: 'Informe o WhatsApp com DDD (10 ou 11 dígitos).' });
+        return;
+      }
+      const whatsapp = formatBrazilPhone(whatsappDigits);
+
+      if (!Array.isArray(body.serviceIds) || body.serviceIds.length === 0) {
+        res.status(400).json({
+          error: 'Selecione pelo menos um serviço de interesse.',
+        });
+        return;
+      }
+
+      if (typeof body.acceptsPromotions !== 'boolean') {
+        res.status(400).json({
+          error:
+            'Informe se deseja receber promoções, novidades e ofertas exclusivas pelo WhatsApp.',
+        });
+        return;
+      }
+
+      const selectedServices: InterestedLeadService[] = [];
+      const categoriesSet = new Set<ServiceCategoryId>();
+      const seenIds = new Set<string>();
+
+      for (const rawId of body.serviceIds) {
+        if (typeof rawId !== 'string' || seenIds.has(rawId)) continue;
+        const found = findStudioServiceById(rawId);
+        if (!found) continue;
+        const category = classifyServiceCategory(found, found.professional);
+        if (!category) continue;
+        seenIds.add(rawId);
+        categoriesSet.add(category);
+        selectedServices.push({
+          id: found.id,
+          name: found.name,
+          professional: found.professional,
+          category,
+        });
+      }
+
+      if (selectedServices.length === 0) {
+        res.status(400).json({
+          error: 'Selecione pelo menos um serviço de interesse válido.',
+        });
+        return;
+      }
+
+      const categoryOrder = SERVICE_CATEGORIES.map((c) => c.id);
+      const serviceCategories = categoryOrder.filter((id) =>
+        categoriesSet.has(id),
+      );
+
+      const idempotencyKey =
+        typeof body.idempotencyKey === 'string' &&
+        body.idempotencyKey.trim().length > 0
+          ? body.idempotencyKey.trim().slice(0, 128)
+          : null;
+
+      const lead = await insertInterestedLead({
+        name,
+        whatsapp,
+        whatsappDigits,
+        services: selectedServices,
+        serviceCategories,
+        acceptsPromotions: body.acceptsPromotions,
+        idempotencyKey,
+      });
+
+      res.status(201).json({ lead });
     }),
   );
 
@@ -806,12 +1153,19 @@ export function createApiApp() {
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
       const search =
         typeof req.query.search === 'string' ? req.query.search : undefined;
-      // Strictly Duda's clients only
-      const dudaAttendances = await queryAttendances({
-        professional: 'duda',
-        search,
-      });
-      const clients = buildPanelClients(dudaAttendances);
+      const brazilToday = getBrazilTodayISO();
+      // Strictly Duda's clients and upcoming appointments only
+      const [dudaAttendances, upcomingAppointments] = await Promise.all([
+        queryAttendances({
+          professional: 'duda',
+          search,
+        }),
+        listAgendaAppointments({
+          professional: 'duda',
+          startDate: brazilToday,
+        }),
+      ]);
+      const clients = buildPanelClients(dudaAttendances, upcomingAppointments);
       res.json({ clients });
     }),
   );
@@ -1021,8 +1375,24 @@ export function createApiApp() {
       const profParam = req.query.professional;
       const professional: Professional | undefined =
         profParam === 'lais' || profParam === 'duda' ? profParam : undefined;
-      const allAttendances = await queryAttendances({ professional, search });
-      const clients = buildPanelClients(allAttendances);
+      const brazilToday = getBrazilTodayISO();
+
+      const [allAttendances, upcomingAppointments] = await Promise.all([
+        queryAttendances({ professional, search }),
+        professional
+          ? listAgendaAppointments({ professional, startDate: brazilToday })
+          : Promise.all([
+              listAgendaAppointments({ professional: 'lais', startDate: brazilToday }),
+              listAgendaAppointments({ professional: 'duda', startDate: brazilToday }),
+            ]).then(([laisAppts, dudaAppts]) =>
+              [...laisAppts, ...dudaAppts].sort(
+                (a, b) =>
+                  a.appointmentDate.localeCompare(b.appointmentDate) ||
+                  a.appointmentTime.localeCompare(b.appointmentTime),
+              ),
+            ),
+      ]);
+      const clients = buildPanelClients(allAttendances, upcomingAppointments);
       res.json({ clients });
     }),
   );
@@ -1330,6 +1700,7 @@ export function createApiApp() {
         const result = await confirmAttendanceReturnToAgenda({
           attendanceId,
           expectedProfessional: 'duda',
+          actorProfessional: req.user!.professional,
           appointmentDate: body.appointmentDate,
           appointmentTime: body.appointmentTime,
           procedureName: body.procedureName.trim().slice(0, 200),
@@ -1449,15 +1820,19 @@ export function createApiApp() {
       }
 
       try {
-        const appointment = await updateAgendaAppointment(existing.id, {
-          clientName,
-          whatsapp,
-          whatsappDigits,
-          procedureName,
-          appointmentDate: body.appointmentDate,
-          appointmentTime: body.appointmentTime,
-          notes,
-        });
+        const appointment = await updateAgendaAppointment(
+          existing.id,
+          {
+            clientName,
+            whatsapp,
+            whatsappDigits,
+            procedureName,
+            appointmentDate: body.appointmentDate,
+            appointmentTime: body.appointmentTime,
+            notes,
+          },
+          req.user!.professional,
+        );
         if (!appointment) {
           res
             .status(409)
@@ -1496,7 +1871,10 @@ export function createApiApp() {
         res.status(404).json({ error: 'Agendamento não encontrado.' });
         return;
       }
-      const appointment = await cancelAgendaAppointment(existing.id);
+      const appointment = await cancelAgendaAppointment(
+        existing.id,
+        req.user!.professional,
+      );
       res.json({ appointment });
     }),
   );
@@ -1510,7 +1888,7 @@ export function createApiApp() {
         res.status(404).json({ error: 'Agendamento não encontrado.' });
         return;
       }
-      await deleteAgendaAppointment(existing.id);
+      await deleteAgendaAppointment(existing.id, req.user!.professional);
       res.json({ ok: true });
     }),
   );
@@ -1577,6 +1955,7 @@ export function createApiApp() {
         const result = await approveReturnRequest({
           returnRequestId: req.params.id,
           expectedProfessional: 'duda',
+          actorProfessional: req.user!.professional,
           appointmentDate: body.appointmentDate,
           appointmentTime: body.appointmentTime,
           procedureName: body.procedureName.trim().slice(0, 200),
@@ -1801,6 +2180,7 @@ export function createApiApp() {
       try {
         const result = await confirmAttendanceReturnToAgenda({
           attendanceId,
+          actorProfessional: req.user!.professional,
           appointmentDate: body.appointmentDate,
           appointmentTime: body.appointmentTime,
           procedureName: body.procedureName.trim().slice(0, 200),
@@ -1916,15 +2296,19 @@ export function createApiApp() {
       }
 
       try {
-        const appointment = await updateAgendaAppointment(existing.id, {
-          clientName,
-          whatsapp,
-          whatsappDigits,
-          procedureName,
-          appointmentDate: body.appointmentDate,
-          appointmentTime: body.appointmentTime,
-          notes,
-        });
+        const appointment = await updateAgendaAppointment(
+          existing.id,
+          {
+            clientName,
+            whatsapp,
+            whatsappDigits,
+            procedureName,
+            appointmentDate: body.appointmentDate,
+            appointmentTime: body.appointmentTime,
+            notes,
+          },
+          req.user!.professional,
+        );
         if (!appointment) {
           res
             .status(409)
@@ -1963,7 +2347,10 @@ export function createApiApp() {
         res.status(404).json({ error: 'Agendamento não encontrado.' });
         return;
       }
-      const appointment = await cancelAgendaAppointment(existing.id);
+      const appointment = await cancelAgendaAppointment(
+        existing.id,
+        req.user!.professional,
+      );
       res.json({ appointment });
     }),
   );
@@ -1972,7 +2359,10 @@ export function createApiApp() {
     '/api/admin/agenda/appointments/:id',
     requireAdmin,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-      const deleted = await deleteAgendaAppointment(req.params.id);
+      const deleted = await deleteAgendaAppointment(
+        req.params.id,
+        req.user!.professional,
+      );
       if (!deleted) {
         res.status(404).json({ error: 'Agendamento não encontrado.' });
         return;
@@ -2059,6 +2449,7 @@ export function createApiApp() {
         const result = await approveReturnRequest({
           returnRequestId: req.params.id,
           expectedProfessional: targetReq.isJoint ? 'lais' : undefined,
+          actorProfessional: req.user!.professional,
           appointmentDate: body.appointmentDate,
           appointmentTime: body.appointmentTime,
           procedureName: body.procedureName.trim().slice(0, 200),
@@ -2111,6 +2502,218 @@ export function createApiApp() {
         body && typeof body.id === 'string' ? body.id : undefined;
       await markStudioNotificationsRead('lais', notificationId);
       res.json({ ok: true });
+    }),
+  );
+
+  // Admin-only Interested Leads ("Interessadas")
+  app.get(
+    '/api/admin/interested-leads',
+    requireAdmin,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const search =
+        typeof req.query.search === 'string' ? req.query.search : undefined;
+      const serviceId =
+        typeof req.query.serviceId === 'string'
+          ? req.query.serviceId
+          : undefined;
+      const rawCategory =
+        typeof req.query.category === 'string' ? req.query.category : undefined;
+      const validCategory = SERVICE_CATEGORIES.some(
+        (c) => c.id === rawCategory,
+      )
+        ? (rawCategory as ServiceCategoryId)
+        : undefined;
+      const promotionsParam = req.query.promotions;
+      const acceptsPromotions =
+        promotionsParam === 'yes'
+          ? true
+          : promotionsParam === 'no'
+            ? false
+            : undefined;
+
+      const leads = await listInterestedLeads({
+        search,
+        serviceId,
+        category: validCategory,
+        acceptsPromotions,
+      });
+      res.json({ leads });
+    }),
+  );
+
+  app.delete(
+    '/api/admin/interested-leads/:id',
+    requireAdmin,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const deleted = await deleteInterestedLead(req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: 'Cadastro de interessada não encontrado.' });
+        return;
+      }
+      res.json({ ok: true });
+    }),
+  );
+
+  // ============================================================================
+  // REAL-TIME NOTIFICATIONS SSE STREAM & WEB PUSH SUBSCRIPTIONS
+  // ============================================================================
+
+  app.get(
+    '/api/notifications/stream',
+    requireAuth,
+    (req: AuthenticatedRequest, res: Response) => {
+      const professional = req.user!.professional;
+      res.status(200);
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders?.();
+
+      res.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`);
+
+      const unsubscribe = subscribeNotificationStream(
+        professional,
+        (notification) => {
+          if (res.writableEnded) return;
+          res.write(
+            `event: notification\ndata: ${JSON.stringify(notification)}\n\n`,
+          );
+        },
+      );
+
+      const keepAliveTimer = setInterval(() => {
+        if (!res.writableEnded) {
+          res.write(': ping\n\n');
+        }
+      }, 25_000);
+
+      req.on('close', () => {
+        clearInterval(keepAliveTimer);
+        unsubscribe();
+      });
+    },
+  );
+
+  app.get(
+    '/api/push/vapid-public-key',
+    requireAuth,
+    asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+      const publicKey = await getPublicVapidKey();
+      res.json({ publicKey });
+    }),
+  );
+
+  app.get(
+    '/api/push/status',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const [publicKey, subscriptions] = await Promise.all([
+        getPublicVapidKey(),
+        listPushSubscriptionsForUser(req.user!.id),
+      ]);
+      res.json({
+        vapidPublicKey: publicKey,
+        configured: Boolean(publicKey),
+        activeSubscriptionsCount: subscriptions.length,
+        subscriptions,
+      });
+    }),
+  );
+
+  app.post(
+    '/api/push/subscribe',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const body = req.body as {
+        endpoint?: unknown;
+        keys?: { p256dh?: unknown; auth?: unknown };
+        deviceLabel?: unknown;
+      };
+
+      if (!isValidPushEndpoint(body?.endpoint)) {
+        res
+          .status(400)
+          .json({ error: 'Endpoint de notificação push inválido.' });
+        return;
+      }
+
+      const p256dh = body?.keys?.p256dh;
+      const auth = body?.keys?.auth;
+      if (!isValidPushKey(p256dh) || !isValidPushKey(auth)) {
+        res
+          .status(400)
+          .json({ error: 'Chaves de assinatura push inválidas.' });
+        return;
+      }
+
+      const deviceLabel =
+        typeof body.deviceLabel === 'string' && body.deviceLabel.trim()
+          ? body.deviceLabel.trim().slice(0, 120)
+          : 'Celular / Navegador';
+
+      const subscription = await upsertPushSubscription({
+        userId: req.user!.id,
+        professional: req.user!.professional,
+        endpoint: body.endpoint.trim(),
+        p256dh: p256dh.trim(),
+        auth: auth.trim(),
+        deviceLabel,
+      });
+
+      res.status(201).json({ ok: true, subscription });
+    }),
+  );
+
+  app.post(
+    '/api/push/unsubscribe',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const body = req.body as { endpoint?: unknown } | undefined;
+      const endpoint =
+        body && typeof body.endpoint === 'string' && body.endpoint.trim()
+          ? body.endpoint.trim()
+          : undefined;
+      const removed = await deletePushSubscriptionForUser(
+        req.user!.id,
+        endpoint,
+      );
+      res.json({ ok: true, removed });
+    }),
+  );
+
+  app.post(
+    '/api/push/test',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const user = req.user!;
+      const [notification, subscriptions] = await Promise.all([
+        createAndPublishStudioNotification({
+          recipient: user.professional,
+          type: 'test_notification',
+          title: 'MAIS CÍLIOS · Notificação de teste',
+          message: `Olá ${user.displayName}! Suas notificações em tempo real e no celular estão ativas.`,
+          requestTypeLabel: 'Notificação de teste',
+          clientName: user.displayName,
+          procedures: ['Alerta de teste do sistema'],
+          desiredDate: getBrazilTodayISO(),
+          desiredTime: null,
+          isJoint: false,
+          relatedReturnRequestId: null,
+          relatedAppointmentId: null,
+          jointGroupId: null,
+          targetTab: 'appointments',
+          targetDate: getBrazilTodayISO(),
+          targetProfessional: user.professional,
+        }),
+        listPushSubscriptionsForUser(user.id),
+      ]);
+
+      res.json({
+        ok: true,
+        notification,
+        activeSubscriptionsCount: subscriptions.length,
+      });
     }),
   );
 

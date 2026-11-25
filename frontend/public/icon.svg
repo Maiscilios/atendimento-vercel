@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF1D8D" />
+      <stop offset="100%" stop-color="#B80B61" />
+    </linearGradient>
+    <linearGradient id="soft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF7FB" />
+      <stop offset="100%" stop-color="#FFE0EF" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <rect x="44" y="44" width="424" height="424" rx="88" fill="none" stroke="#FFE0EF" stroke-opacity="0.35" stroke-width="6" />
+  <!-- Stylized Eyelash Curve -->
+  <path
+    d="M120 226 C185 278, 327 278, 392 226"
+    fill="none"
+    stroke="url(#soft)"
+    stroke-width="22"
+    stroke-linecap="round"
+  />
+  <!-- Lashes -->
+  <g stroke="#FFF7FB" stroke-width="15" stroke-linecap="round">
+    <line x1="150" y1="244" x2="122" y2="188" />
+    <line x1="198" y1="262" x2="180" y2="188" />
+    <line x1="256" y1="268" x2="256" y2="176" />
+    <line x1="314" y1="262" x2="332" y2="188" />
+    <line x1="362" y1="244" x2="390" y2="188" />
+  </g>
+  <!-- Brand Mark -->
+  <text
+    x="256"
+    y="372"
+    text-anchor="middle"
+    fill="#FFF7FB"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="88"
+    font-weight="700"
+    letter-spacing="8"
+  >MC</text>
+</svg>

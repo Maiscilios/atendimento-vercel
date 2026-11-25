@@ -7,6 +7,7 @@ export type ReturnOption =
   | '20_days'
   | '25_days'
   | 'to_arrange'
+  | 'specific_date'
   | 'no_schedule';
 
 export type ReturnStatus = 'waiting' | 'confirmed' | 'not_applicable';
@@ -130,6 +131,112 @@ export const LAIS_RETURN_OPTIONS: ReturnOptionMeta[] = [
   { value: 'no_schedule', label: 'Não desejo agendar no momento', days: null },
 ];
 
+export type ServiceCategoryId =
+  | 'extensao_cilios'
+  | 'sobrancelhas'
+  | 'epilacao_facial_buco'
+  | 'alongamento_unhas'
+  | 'manicure_pedicure'
+  | 'procedimentos_gel'
+  | 'spa_pes';
+
+export interface ServiceCategoryMeta {
+  id: ServiceCategoryId;
+  label: string;
+}
+
+export const SERVICE_CATEGORIES: ServiceCategoryMeta[] = [
+  { id: 'extensao_cilios', label: 'Extensão de cílios' },
+  { id: 'sobrancelhas', label: 'Sobrancelhas' },
+  { id: 'epilacao_facial_buco', label: 'Epilação facial e buço' },
+  { id: 'alongamento_unhas', label: 'Alongamento de unhas' },
+  { id: 'manicure_pedicure', label: 'Manicure e pedicure' },
+  { id: 'procedimentos_gel', label: 'Procedimentos em gel' },
+  { id: 'spa_pes', label: 'Spa dos pés' },
+];
+
+const SERVICE_ID_CATEGORY_MAP: Record<string, ServiceCategoryId> = {
+  lais_volume_brasileiro: 'extensao_cilios',
+  lais_volume_brasileiro_express: 'extensao_cilios',
+  lais_5d: 'extensao_cilios',
+  lais_5d_express: 'extensao_cilios',
+  lais_fox: 'extensao_cilios',
+  lais_efeito_sirena: 'extensao_cilios',
+  lais_sobrancelha: 'sobrancelhas',
+  lais_henna: 'sobrancelhas',
+  lais_buco: 'epilacao_facial_buco',
+  lais_epilacao_facial: 'epilacao_facial_buco',
+  duda_alongamento_fibra: 'alongamento_unhas',
+  duda_alongamento_f1: 'alongamento_unhas',
+  duda_manutencao: 'alongamento_unhas',
+  duda_remocao: 'alongamento_unhas',
+  duda_manicure_pedicure: 'manicure_pedicure',
+  duda_manicure: 'manicure_pedicure',
+  duda_pedicure: 'manicure_pedicure',
+  duda_banho_gel: 'procedimentos_gel',
+  duda_blindagem: 'procedimentos_gel',
+  duda_spa_pes: 'spa_pes',
+};
+
+export function classifyServiceCategory(
+  service: { id?: string; name?: string },
+  professional?: Professional,
+): ServiceCategoryId | null {
+  if (service.id && SERVICE_ID_CATEGORY_MAP[service.id]) {
+    return SERVICE_ID_CATEGORY_MAP[service.id];
+  }
+
+  const norm = (service.name ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (!norm) return null;
+
+  if (
+    norm.includes('volume brasileiro') ||
+    norm.includes('5d') ||
+    norm.includes('fox') ||
+    norm.includes('sirena') ||
+    norm.includes('cilios')
+  ) {
+    return 'extensao_cilios';
+  }
+  if (norm.includes('sobrancelha') || norm.includes('henna')) {
+    return 'sobrancelhas';
+  }
+  if (norm.includes('epilacao') || norm.includes('buco')) {
+    return 'epilacao_facial_buco';
+  }
+  if (norm.includes('spa dos pes') || norm.includes('spa')) {
+    return 'spa_pes';
+  }
+  if (
+    norm.includes('banho de gel') ||
+    norm.includes('blindagem') ||
+    norm.includes('esmaltacao em gel')
+  ) {
+    return 'procedimentos_gel';
+  }
+  if (norm.includes('manicure') || norm.includes('pedicure')) {
+    return 'manicure_pedicure';
+  }
+  if (
+    norm.includes('alongamento') ||
+    norm.includes('fibra') ||
+    norm.includes('molde f1') ||
+    norm.includes('remocao') ||
+    (norm.includes('manutencao') && professional !== 'lais')
+  ) {
+    return 'alongamento_unhas';
+  }
+  if (norm.includes('manutencao') && professional === 'lais') {
+    return 'extensao_cilios';
+  }
+
+  return null;
+}
+
 export function getServicesCatalog(professional: Professional): ServiceItem[] {
   return professional === 'duda' ? DUDA_SERVICES : LAIS_SERVICES;
 }
@@ -152,6 +259,9 @@ export function getReturnOptionLabel(
   option: ReturnOption,
   professional?: Professional,
 ): string {
+  if (option === 'specific_date') {
+    return 'Data e horário específicos';
+  }
   const list =
     professional === 'lais' ? LAIS_RETURN_OPTIONS : DUDA_RETURN_OPTIONS;
   const found = list.find((item) => item.value === option);

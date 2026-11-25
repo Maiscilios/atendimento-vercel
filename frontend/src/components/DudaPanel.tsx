@@ -16,7 +16,7 @@ import {
   Menu,
   MessageCircle,
   RefreshCw,
-  Search,
+  Smartphone,
   Users,
   X,
 } from 'lucide-react';
@@ -33,13 +33,14 @@ import {
   type AuthUser,
 } from '../../../shared/catalog';
 import {
-  formatDaysSinceLastVisitBR,
   type DailyCommissionSummary,
   type PanelClientSummary,
   type ReturnRequest,
   type ReturnRequestStatus,
   type StudioNotification,
 } from '../../../shared/panelTypes';
+import type { PanelDeepLink } from '../App';
+import { useNotificationsStream } from '../hooks/useNotificationsStream';
 import {
   fetchDudaClients,
   fetchDudaCommissions,
@@ -52,12 +53,16 @@ import { AgendaBookingModal, type AgendaBookingModalState } from './AgendaBookin
 import { AgendaCalendarTab, type AgendaInitialBookingRequest } from './AgendaCalendarTab';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ClientDetailModal } from './ClientDetailModal';
+import { ClientsTabView } from './ClientsTabView';
+import { NotificationSettingsModal } from './NotificationSettingsModal';
 import { PanelSidebarNav, type SidebarNavItem } from './PanelSidebarNav';
 
 interface DudaPanelProps {
   user: AuthUser;
   onGoHome: () => void;
   onLogout: () => void;
+  deepLink?: PanelDeepLink | null;
+  onDeepLinkConsumed?: () => void;
 }
 
 type DudaTab = 'home' | 'clients' | 'appointments' | 'agenda' | 'commissions';
@@ -70,10 +75,17 @@ const TABS: Array<SidebarNavItem<DudaTab>> = [
   { id: 'commissions', label: 'Minhas comissões', icon: DollarSign },
 ];
 
-export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
+export function DudaPanel({
+  user,
+  onGoHome,
+  onLogout,
+  deepLink,
+  onDeepLinkConsumed,
+}: DudaPanelProps) {
   const [activeTab, setActiveTab] = useState<DudaTab>('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [notifSettingsOpen, setNotifSettingsOpen] = useState(false);
   const [error, setError] = useState('');
 
   // Tab 1: Início
@@ -94,11 +106,13 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
   const [statusFilter, setStatusFilter] = useState<'all' | ReturnRequestStatus>('all');
   const [appointments, setAppointments] = useState<ReturnRequest[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+  const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
   const [agendaBookingState, setAgendaBookingState] = useState<AgendaBookingModalState>({
     kind: 'closed',
   });
   const [agendaFeedback, setAgendaFeedback] = useState('');
   const [agendaFocusDate, setAgendaFocusDate] = useState<string | undefined>(undefined);
+  const [agendaRefreshSignal, setAgendaRefreshSignal] = useState(0);
   const [agendaInitialBooking, setAgendaInitialBooking] =
     useState<AgendaInitialBookingRequest | null>(null);
 
@@ -191,11 +205,55 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
 
   useEffect(() => {
     void loadNotifications();
-    const timer = window.setInterval(() => {
-      void loadNotifications();
-    }, 30_000);
-    return () => window.clearInterval(timer);
   }, [loadNotifications]);
+
+  useNotificationsStream({
+    enabled: true,
+    onNotification: (notif) => {
+      setNotifications((prev) => {
+        if (prev.some((existing) => existing.id === notif.id)) return prev;
+        return [notif, ...prev].slice(0, 60);
+      });
+      if (
+        notif.type === 'return_request' ||
+        notif.type === 'public_pre_booking' ||
+        notif.type === 'joint_request' ||
+        notif.type === 'joint_proposed' ||
+        notif.type === 'joint_approved'
+      ) {
+        void loadAppointments();
+      }
+      if (
+        notif.type === 'joint_approved' ||
+        notif.type === 'joint_updated' ||
+        notif.type === 'appointment_updated' ||
+        notif.type === 'appointment_cancelled'
+      ) {
+        setAgendaRefreshSignal((n) => n + 1);
+      }
+    },
+    onReconnect: () => {
+      void loadNotifications();
+      if (activeTab === 'appointments') void loadAppointments();
+      if (activeTab === 'agenda') setAgendaRefreshSignal((n) => n + 1);
+    },
+  });
+
+  useEffect(() => {
+    if (!deepLink) return;
+    if (deepLink.tab === 'agenda') {
+      if (deepLink.targetDate) {
+        setAgendaFocusDate(deepLink.targetDate);
+      }
+      setActiveTab('agenda');
+      setAgendaRefreshSignal((n) => n + 1);
+    } else {
+      setStatusFilter('all');
+      setHighlightedRequestId(deepLink.returnRequestId ?? null);
+      setActiveTab('appointments');
+    }
+    onDeepLinkConsumed?.();
+  }, [deepLink, onDeepLinkConsumed]);
 
   useEffect(() => {
     if (activeTab === 'home') void loadHome();
@@ -214,6 +272,25 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
       );
     } catch {
       // Ignore transient mark-read failures
+    }
+  }
+
+  function handleOpenNotificationTarget(notif: StudioNotification) {
+    if (!notif.read) {
+      void handleMarkNotificationRead(notif.id);
+    }
+    setNotificationsOpen(false);
+    if (notif.targetTab === 'agenda') {
+      if (notif.targetDate) {
+        setAgendaFocusDate(notif.targetDate);
+      }
+      setActiveTab('agenda');
+      setAgendaRefreshSignal((n) => n + 1);
+    } else {
+      setStatusFilter('all');
+      setHighlightedRequestId(notif.relatedReturnRequestId ?? null);
+      setActiveTab('appointments');
+      void loadAppointments();
     }
   }
 
@@ -259,6 +336,15 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
             </button>
             <button
               type="button"
+              onClick={() => setNotifSettingsOpen(true)}
+              aria-label="Notificações no celular"
+              className="min-h-[40px] px-2 sm:px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap btn-ghost"
+            >
+              <Smartphone className="w-4 h-4" />
+              <span className="hidden md:inline">Celular</span>
+            </button>
+            <button
+              type="button"
               onClick={onGoHome}
               className="min-h-[40px] px-2 sm:px-3 py-1.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap btn-secondary" aria-label="Tela inicial"
             >
@@ -285,12 +371,28 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
             </button>
 
             {notificationsOpen && (
-              <div className="absolute right-0 top-12 w-80 sm:w-96 bg-surface border border-border rounded-2xl shadow-dialog z-40 overflow-hidden">
+              <div className="absolute right-0 top-12 w-80 sm:w-[26rem] bg-surface border border-border rounded-2xl shadow-dialog z-40 overflow-hidden">
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2 bg-background">
-                  <span className="text-sm font-semibold text-brand-strong">
-                    Notificações da Duda
-                  </span>
-                  <div className="flex items-center gap-2">
+                  <div className="min-w-0">
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-brand">
+                      MAIS CÍLIOS
+                    </span>
+                    <span className="text-sm font-semibold text-brand-strong">
+                      Notificações da Duda
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificationsOpen(false);
+                        setNotifSettingsOpen(true);
+                      }}
+                      className="px-2 py-1 rounded-lg text-[11px] font-semibold btn-secondary inline-flex items-center gap-1"
+                    >
+                      <Smartphone className="w-3 h-3" />
+                      <span>Celular</span>
+                    </button>
                     {unreadNotificationsCount > 0 && (
                       <button
                         type="button"
@@ -310,7 +412,7 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                     </button>
                   </div>
                 </div>
-                <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                <div className="max-h-96 overflow-y-auto divide-y divide-border">
                   {notifications.length === 0 ? (
                     <p className="p-5 text-center text-xs text-text-secondary">
                       Nenhuma notificação no momento.
@@ -319,35 +421,62 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                     notifications.map((notif) => (
                       <div
                         key={notif.id}
-                        className={`p-3.5 space-y-1.5 text-left ${
+                        className={`p-3.5 space-y-2 text-left ${
                           notif.read ? 'bg-surface' : 'bg-brand-soft/60'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-xs font-bold text-brand-strong">
-                            {notif.title}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-strong">
+                              {notif.requestTypeLabel || notif.title}
+                            </span>
+                            {notif.isJoint && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-brand-soft border border-brand/40 text-[10px] font-bold uppercase text-brand-strong">
+                                Conjunto · Laís + Duda
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-text-secondary tabular-nums shrink-0">
                             {formatBrazilTimeBR(notif.createdAt)}
                           </span>
                         </div>
-                        <p className="text-xs text-text-primary leading-relaxed">
-                          {notif.message}
-                        </p>
+
+                        {notif.clientName && (
+                          <p className="text-xs font-bold text-text-primary">
+                            Cliente: {notif.clientName}
+                          </p>
+                        )}
+
+                        {notif.procedures && notif.procedures.length > 0 && (
+                          <p className="text-xs text-text-secondary">
+                            <strong className="text-text-primary">Procedimentos:</strong>{' '}
+                            {notif.procedures.join(', ')}
+                          </p>
+                        )}
+
+                        {notif.desiredDate && (
+                          <p className="text-xs text-text-secondary tabular-nums">
+                            <strong className="text-text-primary">Data desejada:</strong>{' '}
+                            {formatDateBR(notif.desiredDate)}
+                            {notif.desiredTime ? ` às ${notif.desiredTime}` : ''}
+                          </p>
+                        )}
+
+                        {!notif.clientName && (
+                          <p className="text-xs text-text-primary leading-relaxed">
+                            {notif.message}
+                          </p>
+                        )}
+
                         <div className="flex items-center justify-between pt-1">
                           <button
                             type="button"
-                            onClick={() => {
-                              if (!notif.read) {
-                                void handleMarkNotificationRead(notif.id);
-                              }
-                              setNotificationsOpen(false);
-                              setActiveTab('appointments');
-                              void loadAppointments();
-                            }}
+                            onClick={() => handleOpenNotificationTarget(notif)}
                             className="text-xs font-semibold text-brand-strong hover:underline"
                           >
-                            Ver em Agendamentos
+                            {notif.targetTab === 'agenda'
+                              ? 'Ver na Minha agenda'
+                              : 'Ver em Agendamentos'}
                           </button>
                           {!notif.read && (
                             <button
@@ -545,101 +674,23 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
 
         {/* 2. MINHAS CLIENTES */}
         {activeTab === 'clients' && (
-          <div className="space-y-5">
-            <div className="bg-surface border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 text-brand absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={clientSearch}
-                  onChange={(e) => setClientSearch(e.target.value)}
-                  placeholder="Buscar cliente por nome ou WhatsApp..."
-                  className="w-full min-h-[44px] pl-10 pr-4 py-2 border rounded-xl field-control text-base"
-                />
-              </div>
-              <span className="text-xs font-medium text-text-secondary tabular-nums">
-                {clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}
-              </span>
-            </div>
-
-            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-              {clientsLoading ? (
-                <div className="p-8 text-center text-sm text-text-secondary">
-                  Carregando suas clientes...
-                </div>
-              ) : clients.length === 0 ? (
-                <div className="p-8 text-center space-y-1.5">
-                  <p className="text-base font-medium text-text-primary">
-                    Nenhuma cliente encontrada
-                  </p>
-                  <p className="text-sm text-text-secondary">
-                    Suas clientes aparecerão aqui automaticamente conforme os atendimentos forem confirmados.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {clients.map((client) => (
-                    <div
-                      key={client.key}
-                      className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-background transition-colors"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedClient(client)}
-                          className="text-left text-base font-semibold text-brand-strong hover:underline"
-                        >
-                          {client.clientName}
-                        </button>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary tabular-nums">
-                          <span>
-                            {client.totalVisits}{' '}
-                            {client.totalVisits === 1 ? 'atendimento' : 'atendimentos'}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>Último: {formatDateBR(client.lastVisitDate)}</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-semibold text-brand-strong">
-                            {formatDaysSinceLastVisitBR(client.lastVisitDate, brazilToday)}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>Toque no nome para ver cadastro</span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-                        <a
-                          href={buildWhatsAppLink(client.whatsapp)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 transition-colors tabular-nums btn-success-soft"
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                          <span>{client.whatsapp}</span>
-                        </a>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAgendaInitialBooking({
-                              requestId: Date.now(),
-                              clientName: client.clientName,
-                              whatsapp: client.whatsapp,
-                            });
-                            setActiveTab('agenda');
-                          }}
-                          className="min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-colors btn-primary"
-                        >
-                          <CalendarPlus className="w-4 h-4" />
-                          <span>Agendar</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <ClientsTabView
+            clients={clients}
+            loading={clientsLoading}
+            search={clientSearch}
+            onSearchChange={setClientSearch}
+            brazilToday={brazilToday}
+            onSelectClient={setSelectedClient}
+            onScheduleClient={(client) => {
+              setAgendaInitialBooking({
+                requestId: Date.now(),
+                clientName: client.clientName,
+                whatsapp: client.whatsapp,
+              });
+              setActiveTab('agenda');
+            }}
+            emptySubtitle="Suas clientes aparecerão aqui automaticamente conforme os atendimentos forem confirmados."
+          />
         )}
 
         {/* 3. AGENDAMENTOS */}
@@ -724,8 +775,9 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                     const isConfirmed = item.status === 'confirmed';
                     const isPendingPartner = item.status === 'pending_partner';
                     const targetDate = item.proposedDate || item.returnDate;
+                    const requestedTime = item.proposedTime || item.desiredTime;
                     const message = targetDate
-                      ? `Olá ${item.clientName}! Aqui é a Duda do estúdio MAIS CÍLIOS. Vi sua preferência de manutenção para ${formatDateBR(targetDate)}${item.proposedTime ? ` às ${item.proposedTime}` : ''}. Vamos confirmar seu horário?`
+                      ? `Olá ${item.clientName}! Aqui é a Duda do estúdio MAIS CÍLIOS. Vi sua solicitação para ${formatDateBR(targetDate)}${requestedTime ? ` às ${requestedTime}` : ''}. Vamos confirmar seu horário?`
                       : `Olá ${item.clientName}! Aqui é a Duda do estúdio MAIS CÍLIOS. Vamos combinar a data da sua próxima manutenção?`;
 
                     const statusLabel = isConfirmed
@@ -739,7 +791,11 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                     return (
                       <div
                         key={item.id}
-                        className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-background"
+                        className={`p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-colors ${
+                          highlightedRequestId === item.id
+                            ? 'bg-brand-soft/60 ring-2 ring-inset ring-brand/40'
+                            : 'hover:bg-background'
+                        }`}
                       >
                         <div className="space-y-2 min-w-0">
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -774,6 +830,11 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                           </p>
 
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-primary">
+                            {item.source === 'public_link' && (
+                              <span className="text-xs font-semibold text-brand-strong">
+                                Pré-agendamento
+                              </span>
+                            )}
                             <span>
                               Prazo:{' '}
                               <strong>
@@ -788,6 +849,14 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                                 </strong>
                               </span>
                             )}
+                            {item.desiredTime && (
+                              <span className="tabular-nums">
+                                Horário desejado:{' '}
+                                <strong className="text-brand-strong">
+                                  {item.desiredTime}
+                                </strong>
+                              </span>
+                            )}
                             {item.proposedDate && item.proposedTime && (
                               <span className="tabular-nums">
                                 Horário sincronizado:{' '}
@@ -797,6 +866,11 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
                               </span>
                             )}
                           </div>
+                          {item.notes && (
+                            <p className="text-xs text-text-secondary">
+                              Obs. da cliente: <strong className="text-text-primary">{item.notes}</strong>
+                            </p>
+                          )}
 
                           {item.isJoint && item.partner && (
                             <div className="p-2.5 rounded-xl bg-brand-soft/75 border border-brand/35 text-xs text-text-secondary space-y-0.5">
@@ -884,6 +958,7 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
             initialDate={agendaFocusDate}
             initialBooking={agendaInitialBooking}
             onInitialBookingConsumed={() => setAgendaInitialBooking(null)}
+            refreshSignal={agendaRefreshSignal}
           />
         )}
 
@@ -1105,6 +1180,13 @@ export function DudaPanel({ user, onGoHome, onLogout }: DudaPanelProps) {
         isOpen={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
         userName={user.displayName}
+      />
+
+      <NotificationSettingsModal
+        isOpen={notifSettingsOpen}
+        onClose={() => setNotifSettingsOpen(false)}
+        userName={user.displayName}
+        professional={user.professional}
       />
 
       <AgendaBookingModal

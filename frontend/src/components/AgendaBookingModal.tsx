@@ -32,6 +32,7 @@ export type AgendaBookingModalState =
       initialDate: string;
       initialClientName?: string;
       initialWhatsapp?: string;
+      initialProcedureNames?: string[];
     }
   | { kind: 'edit'; appointment: AgendaAppointment }
   | { kind: 'confirm-request'; request: AttendanceRecord }
@@ -101,8 +102,12 @@ export function AgendaBookingModal({
       setWhatsapp(
         state.initialWhatsapp ? formatBrazilPhone(state.initialWhatsapp) : ''
       );
-      setSelectedServiceNames([]);
-      setCustomProcedure('');
+      const catalogNames = new Set(
+        getServicesCatalog(state.professional).map((s) => s.name)
+      );
+      const requested = state.initialProcedureNames ?? [];
+      setSelectedServiceNames(requested.filter((name) => catalogNames.has(name)));
+      setCustomProcedure(requested.filter((name) => !catalogNames.has(name)).join(', '));
       setAppointmentDate(state.initialDate || getBrazilTodayISO());
       setAppointmentTime('');
       setNotes('');
@@ -154,8 +159,10 @@ export function AgendaBookingModal({
           req.returnDate ||
           getBrazilTodayISO(),
       );
-      setAppointmentTime(req.partner?.proposedTime || req.proposedTime || '');
-      setNotes('');
+      setAppointmentTime(
+        req.partner?.proposedTime || req.proposedTime || req.desiredTime || ''
+      );
+      setNotes(req.notes || '');
 
       const catalogNames = new Set(
         getServicesCatalog(req.professional).map((s) => s.name),
@@ -390,7 +397,14 @@ export function AgendaBookingModal({
                   Data prevista solicitada:{' '}
                   <strong className="text-text-primary">
                     {formatDateBR(state.request.returnDate)}
+                    {state.request.desiredTime ? ` às ${state.request.desiredTime}` : ''}
                   </strong>
+                </p>
+              )}
+              {state.request.notes && (
+                <p>
+                  Observação da cliente:{' '}
+                  <strong className="text-text-primary">{state.request.notes}</strong>
                 </p>
               )}
               {state.request.isJoint && state.request.partner && (

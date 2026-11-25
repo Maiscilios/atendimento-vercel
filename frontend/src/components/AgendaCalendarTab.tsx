@@ -35,6 +35,7 @@ export interface AgendaInitialBookingRequest {
   clientName: string;
   whatsapp: string;
   professional?: Professional;
+  initialProcedureNames?: string[];
 }
 
 interface AgendaCalendarTabProps {
@@ -43,6 +44,7 @@ interface AgendaCalendarTabProps {
   initialProfessional?: Professional;
   initialBooking?: AgendaInitialBookingRequest | null;
   onInitialBookingConsumed?: () => void;
+  refreshSignal?: number;
 }
 
 const WEEKDAY_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -143,6 +145,7 @@ export function AgendaCalendarTab({
   initialProfessional,
   initialBooking,
   onInitialBookingConsumed,
+  refreshSignal,
 }: AgendaCalendarTabProps) {
   const [brazilToday, setBrazilToday] = useState<string>(() => getBrazilTodayISO());
   const [activeProfessional, setActiveProfessional] = useState<Professional>(
@@ -193,6 +196,7 @@ export function AgendaCalendarTab({
       initialDate: selectedDate || brazilToday,
       initialClientName: initialBooking.clientName,
       initialWhatsapp: initialBooking.whatsapp,
+      initialProcedureNames: initialBooking.initialProcedureNames,
     });
     onInitialBookingConsumed?.();
   }, [
@@ -250,6 +254,12 @@ export function AgendaCalendarTab({
   useEffect(() => {
     void loadAgenda();
   }, [loadAgenda]);
+
+  useEffect(() => {
+    if (refreshSignal && refreshSignal > 0) {
+      void loadAgenda();
+    }
+  }, [refreshSignal, loadAgenda]);
 
   const appointmentsByDate = useMemo(() => {
     const map = new Map<string, AgendaAppointment[]>();
