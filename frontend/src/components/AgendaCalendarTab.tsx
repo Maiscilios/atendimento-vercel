@@ -40,6 +40,7 @@ export interface AgendaInitialBookingRequest {
 
 interface AgendaCalendarTabProps {
   isAdmin: boolean;
+  lockedProfessional?: Professional;
   initialDate?: string;
   initialProfessional?: Professional;
   initialBooking?: AgendaInitialBookingRequest | null;
@@ -141,6 +142,7 @@ function formatLongDateBR(iso: string): string {
 
 export function AgendaCalendarTab({
   isAdmin,
+  lockedProfessional,
   initialDate,
   initialProfessional,
   initialBooking,
@@ -149,7 +151,7 @@ export function AgendaCalendarTab({
 }: AgendaCalendarTabProps) {
   const [brazilToday, setBrazilToday] = useState<string>(() => getBrazilTodayISO());
   const [activeProfessional, setActiveProfessional] = useState<Professional>(
-    isAdmin ? initialProfessional || 'lais' : 'duda'
+    lockedProfessional ?? (isAdmin ? initialProfessional || 'lais' : 'duda')
   );
   const [viewMode, setViewMode] = useState<AgendaViewMode>('day');
   const [selectedDate, setSelectedDate] = useState<string>(() => initialDate || getBrazilTodayISO());
@@ -174,20 +176,22 @@ export function AgendaCalendarTab({
   }, [initialDate]);
 
   useEffect(() => {
-    if (isAdmin && initialProfessional) {
+    if (lockedProfessional) {
+      setActiveProfessional(lockedProfessional);
+    } else if (isAdmin && initialProfessional) {
       setActiveProfessional(initialProfessional);
     }
-  }, [isAdmin, initialProfessional]);
+  }, [lockedProfessional, isAdmin, initialProfessional]);
 
   useEffect(() => {
     if (!initialBooking) return;
     if (lastConsumedBookingIdRef.current === initialBooking.requestId) return;
     lastConsumedBookingIdRef.current = initialBooking.requestId;
 
-    const targetProfessional: Professional = isAdmin
-      ? initialBooking.professional || activeProfessional
-      : 'duda';
-    if (isAdmin && initialBooking.professional) {
+    const targetProfessional: Professional =
+      lockedProfessional ??
+      (isAdmin ? initialBooking.professional || activeProfessional : 'duda');
+    if (!lockedProfessional && isAdmin && initialBooking.professional) {
       setActiveProfessional(initialBooking.professional);
     }
     setBookingModal({
@@ -201,6 +205,7 @@ export function AgendaCalendarTab({
     onInitialBookingConsumed?.();
   }, [
     initialBooking,
+    lockedProfessional,
     isAdmin,
     activeProfessional,
     selectedDate,
@@ -336,7 +341,7 @@ export function AgendaCalendarTab({
   return (
     <div className="space-y-5">
       <div className="bg-surface border border-border rounded-2xl p-4 space-y-4">
-        {isAdmin && (
+        {isAdmin && !lockedProfessional && (
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border">
             <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
               Agenda exibida:

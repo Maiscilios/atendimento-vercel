@@ -2487,8 +2487,10 @@ export function createApiApp() {
   app.get(
     '/api/admin/notifications',
     requireAdmin,
-    asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
-      const notifications = await listStudioNotifications('lais');
+    asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+      const recipient: Professional =
+        req.query.professional === 'duda' ? 'duda' : 'lais';
+      const notifications = await listStudioNotifications(recipient);
       res.json({ notifications });
     }),
   );
@@ -2497,10 +2499,14 @@ export function createApiApp() {
     '/api/admin/notifications/read',
     requireAdmin,
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-      const body = req.body as { id?: unknown } | undefined;
+      const body = req.body as
+        | { id?: unknown; professional?: unknown }
+        | undefined;
       const notificationId =
         body && typeof body.id === 'string' ? body.id : undefined;
-      await markStudioNotificationsRead('lais', notificationId);
+      const recipient: Professional =
+        body && body.professional === 'duda' ? 'duda' : 'lais';
+      await markStudioNotificationsRead(recipient, notificationId);
       res.json({ ok: true });
     }),
   );

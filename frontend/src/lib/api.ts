@@ -617,16 +617,25 @@ export async function approveAdminReturnRequest(
   );
 }
 
-export async function fetchAdminNotifications(): Promise<{
+export async function fetchAdminNotifications(
+  professional?: Professional
+): Promise<{
   notifications: StudioNotification[];
 }> {
-  return apiFetch<{ notifications: StudioNotification[] }>('/api/admin/notifications');
+  const qs = professional ? `?professional=${encodeURIComponent(professional)}` : '';
+  return apiFetch<{ notifications: StudioNotification[] }>(`/api/admin/notifications${qs}`);
 }
 
-export async function markAdminNotificationsRead(id?: string): Promise<void> {
+export async function markAdminNotificationsRead(
+  id?: string,
+  professional?: Professional
+): Promise<void> {
   await apiFetch<{ ok: boolean }>('/api/admin/notifications/read', {
     method: 'POST',
-    body: JSON.stringify(id ? { id } : {}),
+    body: JSON.stringify({
+      ...(id ? { id } : {}),
+      ...(professional ? { professional } : {}),
+    }),
   });
 }
 
