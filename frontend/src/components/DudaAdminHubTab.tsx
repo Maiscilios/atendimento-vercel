@@ -1010,6 +1010,8 @@ export function DudaAdminHubTab({
             });
             setSection('agenda');
           }}
+          professional="duda"
+          showProfessionalFilter={false}
           emptySubtitle="As clientes atendidas pela Duda aparecerão aqui conforme os atendimentos forem confirmados."
         />
       )}

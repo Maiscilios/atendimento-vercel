@@ -694,6 +694,8 @@ export function DudaPanel({
               });
               setActiveTab('agenda');
             }}
+            professional="duda"
+            showProfessionalFilter={false}
             emptySubtitle="Suas clientes aparecerão aqui automaticamente conforme os atendimentos forem confirmados."
           />
         )}

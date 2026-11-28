@@ -22,8 +22,8 @@ import {
   LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
   LAIS_SERVICES,
-  RETURN_HOUR_OPTIONS_BY_PERIOD,
-  RETURN_PERIOD_OPTIONS,
+  RETURN_ANY_TIME_LABEL,
+  RETURN_AVAILABLE_HOURS,
   addDaysToISO,
   calculateReturnDateISO,
   findStudioServiceById,
@@ -42,7 +42,6 @@ import {
   type LashAttendanceType,
   type Professional,
   type ReturnOption,
-  type ReturnPeriod,
 } from '../../../shared/catalog';
 import {
   lookupClientsByWhatsapp,
@@ -258,12 +257,12 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   >(null);
   const [returnOption, setReturnOption] = useState<ReturnOption | null>(null);
   const [specificReturnDate, setSpecificReturnDate] = useState('');
-  const [preferredPeriod, setPreferredPeriod] = useState<ReturnPeriod | null>(
-    null,
-  );
-  const [selectedPreferredHours, setSelectedPreferredHours] = useState<
-    string[]
-  >([]);
+  const [timePreferenceMode, setTimePreferenceMode] = useState<
+    'specific_time' | 'any_time' | null
+  >(null);
+  const [selectedPreferredHour, setSelectedPreferredHour] = useState<
+    string | null
+  >(null);
   const [showExtraProceduresPicker, setShowExtraProceduresPicker] =
     useState(false);
   const [extraReturnServiceIds, setExtraReturnServiceIds] = useState<string[]>(
@@ -430,21 +429,14 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   }, [returnOption, specificReturnDate, calculatedReturnDate]);
 
   const preferredTimesPayload = useMemo(() => {
-    if (!effectiveReturnDate) return [];
-    return [
-      ...(preferredPeriod ? [preferredPeriod] : []),
-      ...selectedPreferredHours.slice(0, 3),
-    ];
-  }, [effectiveReturnDate, preferredPeriod, selectedPreferredHours]);
+    if (!effectiveReturnDate || !timePreferenceMode) return [];
+    if (timePreferenceMode === 'any_time') return [RETURN_ANY_TIME_LABEL];
+    return selectedPreferredHour ? [selectedPreferredHour] : [];
+  }, [effectiveReturnDate, timePreferenceMode, selectedPreferredHour]);
 
   const preferredTimesSummary = useMemo(
     () => formatPreferredScheduleSummary(preferredTimesPayload),
     [preferredTimesPayload],
-  );
-
-  const availableHourSlots = useMemo(
-    () => RETURN_HOUR_OPTIONS_BY_PERIOD[preferredPeriod ?? 'Qualquer período'],
-    [preferredPeriod],
   );
 
   const selectedExtraReturnServices = useMemo<ExtraReturnService[]>(
@@ -523,8 +515,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     if (answer === 'no') {
       setReturnOption('no_schedule');
       setSpecificReturnDate('');
-      setPreferredPeriod(null);
-      setSelectedPreferredHours([]);
+      setTimePreferenceMode(null);
+      setSelectedPreferredHour(null);
       setShowExtraProceduresPicker(false);
       setExtraReturnServiceIds([]);
     } else if (returnOption === 'no_schedule') {
@@ -537,8 +529,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setReturnOption(option);
     if (option === 'to_arrange' || option === 'no_schedule') {
       setSpecificReturnDate('');
-      setPreferredPeriod(null);
-      setSelectedPreferredHours([]);
+      setTimePreferenceMode(null);
+      setSelectedPreferredHour(null);
     }
   }
 
@@ -547,22 +539,17 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setSpecificReturnDate(isoDate);
   }
 
-  function handleSelectPreferredPeriod(period: ReturnPeriod) {
+  function handleSelectTimePreferenceMode(mode: 'specific_time' | 'any_time') {
     setErrorMessage('');
-    setPreferredPeriod(period);
+    setTimePreferenceMode(mode);
+    if (mode === 'any_time') {
+      setSelectedPreferredHour(null);
+    }
   }
 
-  function togglePreferredHour(hour: string) {
+  function handleSelectPreferredHour(hour: string) {
     setErrorMessage('');
-    setSelectedPreferredHours((prev) => {
-      if (prev.includes(hour)) {
-        return prev.filter((item) => item !== hour);
-      }
-      if (prev.length >= 3) {
-        return prev;
-      }
-      return [...prev, hour];
-    });
+    setSelectedPreferredHour((prev) => (prev === hour ? null : hour));
   }
 
   function handleWhatsappStep1Change(rawValue: string) {
@@ -634,8 +621,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setWantsToScheduleReturn(null);
     setReturnOption(null);
     setSpecificReturnDate('');
-    setPreferredPeriod(null);
-    setSelectedPreferredHours([]);
+    setTimePreferenceMode(null);
+    setSelectedPreferredHour(null);
     setShowExtraProceduresPicker(false);
     setExtraReturnServiceIds([]);
     setErrorMessage('');
@@ -749,9 +736,24 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
       );
       return false;
     }
-    if (wantsToScheduleReturn === 'yes' && effectiveReturnDate && !preferredPeriod) {
+    if (
+      wantsToScheduleReturn === 'yes' &&
+      effectiveReturnDate &&
+      !timePreferenceMode
+    ) {
       setErrorMessage(
-        'Por favor, selecione o período de preferência (ou toque em "Qualquer período").',
+        'Por favor, escolha "Escolher um horário" ou "Qualquer horário".',
+      );
+      return false;
+    }
+    if (
+      wantsToScheduleReturn === 'yes' &&
+      effectiveReturnDate &&
+      timePreferenceMode === 'specific_time' &&
+      !selectedPreferredHour
+    ) {
+      setErrorMessage(
+        'Por favor, selecione um horário de preferência na lista.',
       );
       return false;
     }
@@ -917,7 +919,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
               {confirmation.preferredTimes.length > 0 && (
                 <div className="flex justify-between gap-3">
                   <span className="text-text-secondary">
-                    Período e horários
+                    Horário de preferência
                   </span>
                   <span className="font-medium text-text-primary text-right tabular-nums">
                     {formatPreferredScheduleSummary(confirmation.preferredTimes) ??
@@ -1660,90 +1662,117 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
 
                     {effectiveReturnDate && (
                       <div className="p-4 sm:p-5 rounded-2xl bg-surface border-2 border-brand/35 shadow-sm space-y-4">
-                        <div className="space-y-2.5">
+                        <div className="space-y-1">
                           <div className="flex items-center gap-2 text-brand-strong">
                             <Clock className="w-4 h-4 shrink-0" />
                             <p className="text-sm sm:text-base font-semibold">
-                              Qual período você prefere?
+                              Qual horário você prefere?
                             </p>
                           </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            {RETURN_PERIOD_OPTIONS.map((period) => {
-                              const active = preferredPeriod === period;
-                              return (
-                                <button
-                                  key={period}
-                                  type="button"
-                                  onClick={() => handleSelectPreferredPeriod(period)}
-                                  aria-pressed={active}
-                                  className={`min-h-[46px] px-3 py-2 rounded-2xl border text-sm font-semibold transition-colors flex items-center justify-center text-center ${
-                                    active ? 'choice-selected' : 'choice-idle'
-                                  }`}
-                                >
-                                  {period}
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <p className="text-xs text-text-secondary leading-relaxed">
+                            A escolha é uma preferência, não uma confirmação automática.{' '}
+                            {hasJointReturnBooking
+                              ? 'A Laís e a Duda combinarão e confirmarão o horário definitivo com você pelo WhatsApp.'
+                              : `A ${professionalName} combinará e confirmará o horário definitivo com você pelo WhatsApp.`}
+                          </p>
                         </div>
 
-                        <div className="space-y-2.5 pt-3 border-t border-border">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold text-text-primary">
-                                Horários de preferência (opcional)
-                              </p>
-                              <p className="text-xs text-text-secondary">
-                                Selecione até 3 horários de preferência para ajudar na organização da agenda.
-                              </p>
-                            </div>
-                            <span className="text-xs font-bold text-brand-strong tabular-nums">
-                              {selectedPreferredHours.length}/3 selecionados
-                            </span>
-                          </div>
-
-                          {selectedPreferredHours.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {selectedPreferredHours.map((hour) => (
-                                <button
-                                  key={`picked-${hour}`}
-                                  type="button"
-                                  onClick={() => togglePreferredHour(hour)}
-                                  className="min-h-[34px] px-3 py-1 rounded-xl bg-brand-soft border border-brand/50 text-xs sm:text-sm font-semibold text-brand-strong inline-flex items-center gap-1.5 tabular-nums hover:bg-brand/20 transition-colors"
-                                >
-                                  <span>{hour}</span>
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                            {availableHourSlots.map((hour) => {
-                              const active = selectedPreferredHours.includes(hour);
-                              const disabled =
-                                !active && selectedPreferredHours.length >= 3;
-                              return (
-                                <button
-                                  key={hour}
-                                  type="button"
-                                  disabled={disabled}
-                                  onClick={() => togglePreferredHour(hour)}
-                                  aria-pressed={active}
-                                  className={`min-h-[42px] px-2.5 py-2 rounded-xl border text-sm font-semibold tabular-nums transition-colors ${
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {(
+                            [
+                              {
+                                id: 'specific_time',
+                                label: 'Escolher um horário',
+                                description: 'Selecionar 1 horário de preferência',
+                              },
+                              {
+                                id: 'any_time',
+                                label: 'Qualquer horário',
+                                description: 'Tenho flexibilidade para combinar',
+                              },
+                            ] as const
+                          ).map((opt) => {
+                            const active = timePreferenceMode === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() =>
+                                  handleSelectTimePreferenceMode(opt.id)
+                                }
+                                aria-pressed={active}
+                                className={`min-h-[56px] px-4 py-3 rounded-2xl border text-left flex items-center gap-3 transition-colors ${
+                                  active ? 'choice-selected' : 'choice-idle'
+                                }`}
+                              >
+                                <span
+                                  className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                                     active
-                                      ? 'choice-selected'
-                                      : disabled
-                                        ? 'bg-background border-border/60 text-text-secondary/40 cursor-not-allowed'
-                                        : 'choice-idle'
+                                      ? 'border-brand-strong bg-surface'
+                                      : 'border-placeholder bg-surface'
                                   }`}
                                 >
-                                  {hour}
-                                </button>
-                              );
-                            })}
-                          </div>
+                                  {active && (
+                                    <span className="w-2 h-2 rounded-full bg-brand-strong" />
+                                  )}
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="block text-sm sm:text-base font-semibold">
+                                    {opt.label}
+                                  </span>
+                                  <span className="block text-xs text-text-secondary">
+                                    {opt.description}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
+
+                        {timePreferenceMode === 'specific_time' && (
+                          <div className="space-y-2.5 pt-3 border-t border-border">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-text-primary">
+                                Horários disponíveis (selecione 1 opção)
+                              </p>
+                              {selectedPreferredHour && (
+                                <span className="text-xs font-bold text-brand-strong tabular-nums">
+                                  Selecionado: {selectedPreferredHour}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                              {RETURN_AVAILABLE_HOURS.map((hour) => {
+                                const active = selectedPreferredHour === hour;
+                                return (
+                                  <button
+                                    key={hour}
+                                    type="button"
+                                    onClick={() =>
+                                      handleSelectPreferredHour(hour)
+                                    }
+                                    aria-pressed={active}
+                                    className={`min-h-[42px] px-2.5 py-2 rounded-xl border text-sm font-semibold tabular-nums transition-colors ${
+                                      active ? 'choice-selected' : 'choice-idle'
+                                    }`}
+                                  >
+                                    {hour}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {timePreferenceMode === 'any_time' && (
+                          <div className="p-3.5 rounded-xl bg-brand-soft/65 border border-brand/35 text-xs sm:text-sm font-medium text-brand-strong leading-relaxed">
+                            Você informou flexibilidade de horário.{' '}
+                            {hasJointReturnBooking
+                              ? 'A Laís e a Duda entrarão em contato pelo WhatsApp para combinar os melhores horários disponíveis. 🩷'
+                              : `A ${professionalName} entrará em contato pelo WhatsApp para combinar o melhor horário disponível. 🩷`}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -2104,7 +2133,7 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                   {effectiveReturnDate && preferredTimesSummary && (
                     <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
                       <dt className="text-text-secondary">
-                        Período e horários de preferência
+                        Horário de preferência
                       </dt>
                       <dd className="font-semibold text-text-primary tabular-nums sm:text-right">
                         {preferredTimesSummary}

@@ -896,6 +896,7 @@ export function LaisAdminPanel({
                 });
                 setActiveTab('agenda');
               }}
+              professional="lais"
               showProfessionalFilter={false}
               emptySubtitle="Suas clientes aparecerão aqui automaticamente conforme seus atendimentos forem confirmados."
             />

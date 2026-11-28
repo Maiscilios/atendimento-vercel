@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Calendar,
   CalendarPlus,
@@ -8,9 +8,9 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {
-  SERVICE_CATEGORIES,
   buildWhatsAppLink,
   formatDateBR,
+  getServiceCategoriesForProfessional,
   type Professional,
   type ServiceCategoryId,
 } from '../../../shared/catalog';
@@ -29,6 +29,7 @@ interface ClientsTabViewProps {
   brazilToday: string;
   onSelectClient: (client: PanelClientSummary) => void;
   onScheduleClient: (client: PanelClientSummary) => void;
+  professional?: Professional;
   showProfessionalFilter?: boolean;
   professionalFilter?: 'all' | Professional;
   onProfessionalFilterChange?: (prof: 'all' | Professional) => void;
@@ -43,6 +44,7 @@ export function ClientsTabView({
   brazilToday,
   onSelectClient,
   onScheduleClient,
+  professional,
   showProfessionalFilter = false,
   professionalFilter = 'all',
   onProfessionalFilterChange,
@@ -50,38 +52,62 @@ export function ClientsTabView({
 }: ClientsTabViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('all');
 
+  const scopedCategories = useMemo(
+    () => getServiceCategoriesForProfessional(professional),
+    [professional],
+  );
+
+  const scopedCategoryIdSet = useMemo(
+    () => new Set<ServiceCategoryId>(scopedCategories.map((c) => c.id)),
+    [scopedCategories],
+  );
+
+  useEffect(() => {
+    if (selectedCategory !== 'all' && !scopedCategoryIdSet.has(selectedCategory)) {
+      setSelectedCategory('all');
+    }
+  }, [selectedCategory, scopedCategoryIdSet]);
+
+  const scopedClients = useMemo(() => {
+    if (!professional) return clients;
+    return clients.filter(
+      (client) =>
+        client.professionals.includes(professional) ||
+        client.attendances.some((att) => att.professional === professional),
+    );
+  }, [clients, professional]);
+
   const categoryCounts = useMemo(() => {
-    const counts: Record<CategoryFilter, number> = {
-      all: clients.length,
-      extensao_cilios: 0,
-      sobrancelhas: 0,
-      epilacao_facial_buco: 0,
-      alongamento_unhas: 0,
-      manicure_pedicure: 0,
-      procedimentos_gel: 0,
-      spa_pes: 0,
+    const counts: Partial<Record<CategoryFilter, number>> = {
+      all: scopedClients.length,
     };
 
-    for (const client of clients) {
+    for (const cat of scopedCategories) {
+      counts[cat.id] = 0;
+    }
+
+    for (const client of scopedClients) {
       for (const catId of client.serviceCategories ?? []) {
-        counts[catId] = (counts[catId] ?? 0) + 1;
+        if (scopedCategoryIdSet.has(catId)) {
+          counts[catId] = (counts[catId] ?? 0) + 1;
+        }
       }
     }
 
     return counts;
-  }, [clients]);
+  }, [scopedClients, scopedCategories, scopedCategoryIdSet]);
 
   const filteredClients = useMemo(() => {
-    if (selectedCategory === 'all') return clients;
-    return clients.filter((client) =>
+    if (selectedCategory === 'all') return scopedClients;
+    return scopedClients.filter((client) =>
       (client.serviceCategories ?? []).includes(selectedCategory),
     );
-  }, [clients, selectedCategory]);
+  }, [scopedClients, selectedCategory]);
 
-  const categoryOptions: Array<{ id: CategoryFilter; label: string }> = [
-    { id: 'all', label: 'Todas as clientes' },
-    ...SERVICE_CATEGORIES,
-  ];
+  const categoryOptions: Array<{ id: CategoryFilter; label: string }> = useMemo(
+    () => [{ id: 'all', label: 'Todas as clientes' }, ...scopedCategories],
+    [scopedCategories],
+  );
 
   return (
     <div className="space-y-4">

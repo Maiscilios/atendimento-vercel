@@ -120,6 +120,36 @@ export const RETURN_PERIOD_OPTIONS = [
 
 export type ReturnPeriod = (typeof RETURN_PERIOD_OPTIONS)[number];
 
+export const RETURN_ANY_TIME_LABEL = 'Qualquer horário';
+
+export const RETURN_AVAILABLE_HOURS: string[] = [
+  '08:00',
+  '08:30',
+  '09:00',
+  '09:30',
+  '10:00',
+  '10:30',
+  '11:00',
+  '11:30',
+  '12:00',
+  '12:30',
+  '13:00',
+  '13:30',
+  '14:00',
+  '14:30',
+  '15:00',
+  '15:30',
+  '16:00',
+  '16:30',
+  '17:00',
+  '17:30',
+  '18:00',
+  '18:30',
+  '19:00',
+  '19:30',
+  '20:00',
+];
+
 export const RETURN_HOUR_OPTIONS_BY_PERIOD: Record<ReturnPeriod, string[]> = {
   Manhã: ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30'],
   Tarde: [
@@ -137,33 +167,7 @@ export const RETURN_HOUR_OPTIONS_BY_PERIOD: Record<ReturnPeriod, string[]> = {
     '17:30',
   ],
   Noite: ['18:00', '18:30', '19:00', '19:30', '20:00'],
-  'Qualquer período': [
-    '08:00',
-    '08:30',
-    '09:00',
-    '09:30',
-    '10:00',
-    '10:30',
-    '11:00',
-    '11:30',
-    '12:00',
-    '12:30',
-    '13:00',
-    '13:30',
-    '14:00',
-    '14:30',
-    '15:00',
-    '15:30',
-    '16:00',
-    '16:30',
-    '17:00',
-    '17:30',
-    '18:00',
-    '18:30',
-    '19:00',
-    '19:30',
-    '20:00',
-  ],
+  'Qualquer período': RETURN_AVAILABLE_HOURS,
 };
 
 export function isValidHHMMTime(value: string): boolean {
@@ -176,10 +180,16 @@ export function formatPreferredScheduleSummary(
   if (!Array.isArray(preferredTimes) || preferredTimes.length === 0) {
     return null;
   }
+  const hasAnyTime = preferredTimes.some(
+    (item) => item.trim() === RETURN_ANY_TIME_LABEL,
+  );
   const period = preferredTimes.find((item) =>
     (RETURN_PERIOD_OPTIONS as readonly string[]).includes(item),
   );
   const hours = preferredTimes.filter((item) => isValidHHMMTime(item));
+  if (hasAnyTime && hours.length === 0 && !period) {
+    return RETURN_ANY_TIME_LABEL;
+  }
   const parts: string[] = [];
   if (period) parts.push(period);
   if (hours.length > 0) parts.push(hours.join(', '));
@@ -230,17 +240,39 @@ export type ServiceCategoryId =
 export interface ServiceCategoryMeta {
   id: ServiceCategoryId;
   label: string;
+  professional: Professional;
 }
 
 export const SERVICE_CATEGORIES: ServiceCategoryMeta[] = [
-  { id: 'extensao_cilios', label: 'Extensão de cílios' },
-  { id: 'sobrancelhas', label: 'Sobrancelhas' },
-  { id: 'epilacao_facial_buco', label: 'Epilação facial e buço' },
-  { id: 'alongamento_unhas', label: 'Alongamento de unhas' },
-  { id: 'manicure_pedicure', label: 'Manicure e pedicure' },
-  { id: 'procedimentos_gel', label: 'Procedimentos em gel' },
-  { id: 'spa_pes', label: 'Spa dos pés' },
+  { id: 'extensao_cilios', label: 'Extensão de cílios', professional: 'lais' },
+  { id: 'sobrancelhas', label: 'Sobrancelhas', professional: 'lais' },
+  {
+    id: 'epilacao_facial_buco',
+    label: 'Epilação facial e buço',
+    professional: 'lais',
+  },
+  { id: 'alongamento_unhas', label: 'Alongamento de unhas', professional: 'duda' },
+  { id: 'manicure_pedicure', label: 'Manicure e pedicure', professional: 'duda' },
+  { id: 'procedimentos_gel', label: 'Procedimentos em gel', professional: 'duda' },
+  { id: 'spa_pes', label: 'Spa dos pés', professional: 'duda' },
 ];
+
+export function getServiceCategoriesForProfessional(
+  professional?: Professional,
+): ServiceCategoryMeta[] {
+  if (!professional) return SERVICE_CATEGORIES;
+  return SERVICE_CATEGORIES.filter((cat) => cat.professional === professional);
+}
+
+const CATEGORY_PROFESSIONAL_MAP: Record<ServiceCategoryId, Professional> = {
+  extensao_cilios: 'lais',
+  sobrancelhas: 'lais',
+  epilacao_facial_buco: 'lais',
+  alongamento_unhas: 'duda',
+  manicure_pedicure: 'duda',
+  procedimentos_gel: 'duda',
+  spa_pes: 'duda',
+};
 
 const SERVICE_ID_CATEGORY_MAP: Record<string, ServiceCategoryId> = {
   lais_volume_brasileiro: 'extensao_cilios',
@@ -269,59 +301,59 @@ export function classifyServiceCategory(
   service: { id?: string; name?: string },
   professional?: Professional,
 ): ServiceCategoryId | null {
+  let resolved: ServiceCategoryId | null = null;
+
   if (service.id && SERVICE_ID_CATEGORY_MAP[service.id]) {
-    return SERVICE_ID_CATEGORY_MAP[service.id];
+    resolved = SERVICE_ID_CATEGORY_MAP[service.id];
+  } else {
+    const norm = (service.name ?? '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    if (!norm) return null;
+
+    if (
+      norm.includes('volume brasileiro') ||
+      norm.includes('5d') ||
+      norm.includes('fox') ||
+      norm.includes('sirena') ||
+      norm.includes('cilios')
+    ) {
+      resolved = 'extensao_cilios';
+    } else if (norm.includes('sobrancelha') || norm.includes('henna')) {
+      resolved = 'sobrancelhas';
+    } else if (norm.includes('epilacao') || norm.includes('buco')) {
+      resolved = 'epilacao_facial_buco';
+    } else if (norm.includes('spa dos pes') || norm.includes('spa')) {
+      resolved = 'spa_pes';
+    } else if (
+      norm.includes('banho de gel') ||
+      norm.includes('blindagem') ||
+      norm.includes('esmaltacao em gel')
+    ) {
+      resolved = 'procedimentos_gel';
+    } else if (norm.includes('manicure') || norm.includes('pedicure')) {
+      resolved = 'manicure_pedicure';
+    } else if (
+      norm.includes('alongamento') ||
+      norm.includes('fibra') ||
+      norm.includes('molde f1') ||
+      norm.includes('remocao') ||
+      (norm.includes('manutencao') && professional !== 'lais')
+    ) {
+      resolved = 'alongamento_unhas';
+    } else if (norm.includes('manutencao') && professional === 'lais') {
+      resolved = 'extensao_cilios';
+    }
   }
 
-  const norm = (service.name ?? '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-
-  if (!norm) return null;
-
-  if (
-    norm.includes('volume brasileiro') ||
-    norm.includes('5d') ||
-    norm.includes('fox') ||
-    norm.includes('sirena') ||
-    norm.includes('cilios')
-  ) {
-    return 'extensao_cilios';
-  }
-  if (norm.includes('sobrancelha') || norm.includes('henna')) {
-    return 'sobrancelhas';
-  }
-  if (norm.includes('epilacao') || norm.includes('buco')) {
-    return 'epilacao_facial_buco';
-  }
-  if (norm.includes('spa dos pes') || norm.includes('spa')) {
-    return 'spa_pes';
-  }
-  if (
-    norm.includes('banho de gel') ||
-    norm.includes('blindagem') ||
-    norm.includes('esmaltacao em gel')
-  ) {
-    return 'procedimentos_gel';
-  }
-  if (norm.includes('manicure') || norm.includes('pedicure')) {
-    return 'manicure_pedicure';
-  }
-  if (
-    norm.includes('alongamento') ||
-    norm.includes('fibra') ||
-    norm.includes('molde f1') ||
-    norm.includes('remocao') ||
-    (norm.includes('manutencao') && professional !== 'lais')
-  ) {
-    return 'alongamento_unhas';
-  }
-  if (norm.includes('manutencao') && professional === 'lais') {
-    return 'extensao_cilios';
+  if (!resolved) return null;
+  if (professional && CATEGORY_PROFESSIONAL_MAP[resolved] !== professional) {
+    return null;
   }
 
-  return null;
+  return resolved;
 }
 
 export function getServicesCatalog(professional: Professional): ServiceItem[] {

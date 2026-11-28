@@ -8,6 +8,7 @@ import {
   DUDA_RETURN_OPTIONS,
   LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
+  RETURN_ANY_TIME_LABEL,
   RETURN_PERIOD_OPTIONS,
   SERVICE_CATEGORIES,
   addDaysToISO,
@@ -17,6 +18,7 @@ import {
   findStudioServiceById,
   formatBrazilPhone,
   getBrazilTodayISO,
+  getServiceCategoriesForProfessional,
   getServicesCatalog,
   isValidHHMMTime,
   normalizeWhatsAppDigits,
@@ -206,9 +208,37 @@ function normalizeClientNameCompare(name: string): string {
 function buildPanelClients(
   records: AttendanceRecord[],
   upcomingAppointments: AgendaAppointment[] = [],
+  professionalScope?: Professional,
 ): PanelClientSummary[] {
+  const scopedRecords = professionalScope
+    ? records.filter((rec) => rec.professional === professionalScope)
+    : records;
+  const scopedAppointments = professionalScope
+    ? upcomingAppointments.filter((appt) => appt.professional === professionalScope)
+    : upcomingAppointments;
+
   const clientMap = new Map<string, PanelClientSummary>();
-  for (const rec of records) {
+  for (const rawRec of scopedRecords) {
+    const scopedServices = professionalScope
+      ? rawRec.services.filter((svc) => {
+          const catalogEntry = findStudioServiceById(svc.id);
+          if (catalogEntry && catalogEntry.professional !== professionalScope) {
+            return false;
+          }
+          const anyCategory = classifyServiceCategory(svc);
+          const scopedCategory = classifyServiceCategory(svc, professionalScope);
+          if (anyCategory && !scopedCategory) {
+            return false;
+          }
+          return true;
+        })
+      : rawRec.services;
+
+    const rec: AttendanceRecord =
+      scopedServices.length === rawRec.services.length
+        ? rawRec
+        : { ...rawRec, services: scopedServices };
+
     const key =
       rec.clientId ||
       (rec.whatsappDigits
@@ -256,7 +286,9 @@ function buildPanelClients(
     }
   }
 
-  const categoryOrder = SERVICE_CATEGORIES.map((c) => c.id);
+  const categoryOrder = getServiceCategoriesForProfessional(
+    professionalScope,
+  ).map((c) => c.id);
 
   for (const client of clients) {
     const categoriesSet = new Set<ServiceCategoryId>();
@@ -264,8 +296,9 @@ function buildPanelClients(
     const proceduresList: string[] = [];
 
     for (const att of client.attendances) {
+      const effectiveProf = professionalScope ?? att.professional;
       for (const svc of att.services) {
-        const cat = classifyServiceCategory(svc, att.professional);
+        const cat = classifyServiceCategory(svc, effectiveProf);
         if (cat) {
           categoriesSet.add(cat);
         }
@@ -289,7 +322,7 @@ function buildPanelClients(
     const singleOwnerOfPhone =
       Boolean(clientDigits) && (phoneClientCounts.get(clientDigits) ?? 0) === 1;
 
-    const nextAppt = upcomingAppointments.find((appt) => {
+    const nextAppt = scopedAppointments.find((appt) => {
       if (appt.status !== 'confirmed') return false;
       const apptDigits = normalizeWhatsAppDigits(
         appt.whatsappDigits || appt.whatsapp,
@@ -791,10 +824,15 @@ export function createApiApp() {
       let preferredTimes: string[] = [];
       if (returnDate !== null && Array.isArray(body.preferredTimes)) {
         let pickedPeriod: string | null = null;
+        let hasAnyTime = false;
         const uniqueHours: string[] = [];
         for (const slot of body.preferredTimes) {
           if (typeof slot !== 'string') continue;
           const trimmed = slot.trim();
+          if (trimmed === RETURN_ANY_TIME_LABEL) {
+            hasAnyTime = true;
+            continue;
+          }
           if (
             !pickedPeriod &&
             (RETURN_PERIOD_OPTIONS as readonly string[]).includes(trimmed)
@@ -806,10 +844,13 @@ export function createApiApp() {
             uniqueHours.push(trimmed);
           }
         }
-        preferredTimes = [
-          ...(pickedPeriod ? [pickedPeriod] : []),
-          ...uniqueHours.slice(0, 3),
-        ];
+        if (pickedPeriod) {
+          preferredTimes = [pickedPeriod, ...uniqueHours.slice(0, 3)];
+        } else if (uniqueHours.length > 0) {
+          preferredTimes = [uniqueHours[0]];
+        } else if (hasAnyTime) {
+          preferredTimes = [RETURN_ANY_TIME_LABEL];
+        }
       }
 
       const returnStatus =
@@ -1190,7 +1231,11 @@ export function createApiApp() {
           startDate: brazilToday,
         }),
       ]);
-      const clients = buildPanelClients(dudaAttendances, upcomingAppointments);
+      const clients = buildPanelClients(
+        dudaAttendances,
+        upcomingAppointments,
+        'duda',
+      );
       res.json({ clients });
     }),
   );
@@ -1398,26 +1443,19 @@ export function createApiApp() {
       const search =
         typeof req.query.search === 'string' ? req.query.search : undefined;
       const profParam = req.query.professional;
-      const professional: Professional | undefined =
-        profParam === 'lais' || profParam === 'duda' ? profParam : undefined;
+      const professional: Professional =
+        profParam === 'duda' ? 'duda' : 'lais';
       const brazilToday = getBrazilTodayISO();
 
       const [allAttendances, upcomingAppointments] = await Promise.all([
         queryAttendances({ professional, search }),
-        professional
-          ? listAgendaAppointments({ professional, startDate: brazilToday })
-          : Promise.all([
-              listAgendaAppointments({ professional: 'lais', startDate: brazilToday }),
-              listAgendaAppointments({ professional: 'duda', startDate: brazilToday }),
-            ]).then(([laisAppts, dudaAppts]) =>
-              [...laisAppts, ...dudaAppts].sort(
-                (a, b) =>
-                  a.appointmentDate.localeCompare(b.appointmentDate) ||
-                  a.appointmentTime.localeCompare(b.appointmentTime),
-              ),
-            ),
+        listAgendaAppointments({ professional, startDate: brazilToday }),
       ]);
-      const clients = buildPanelClients(allAttendances, upcomingAppointments);
+      const clients = buildPanelClients(
+        allAttendances,
+        upcomingAppointments,
+        professional,
+      );
       res.json({ clients });
     }),
   );
