@@ -29,6 +29,7 @@ import {
   getBrazilTodayISO,
   getLocalDateISO,
   getReturnOptionLabel,
+  isValidHHMMTime,
   type AttendanceRecord,
   type AuthUser,
 } from '../../../shared/catalog';
@@ -458,7 +459,11 @@ export function DudaPanel({
                           <p className="text-xs text-text-secondary tabular-nums">
                             <strong className="text-text-primary">Data desejada:</strong>{' '}
                             {formatDateBR(notif.desiredDate)}
-                            {notif.desiredTime ? ` às ${notif.desiredTime}` : ''}
+                            {notif.desiredTime
+                              ? isValidHHMMTime(notif.desiredTime)
+                                ? ` às ${notif.desiredTime}`
+                                : ` (${notif.desiredTime})`
+                              : ''}
                           </p>
                         )}
 
@@ -776,17 +781,20 @@ export function DudaPanel({
                     const isPendingPartner = item.status === 'pending_partner';
                     const targetDate = item.proposedDate || item.returnDate;
                     const requestedTime = item.proposedTime || item.desiredTime;
+                    const formattedTimeInMsg = requestedTime
+                      ? isValidHHMMTime(requestedTime)
+                        ? ` às ${requestedTime}`
+                        : ` (${requestedTime})`
+                      : '';
                     const message = targetDate
-                      ? `Olá ${item.clientName}! Aqui é a Duda do estúdio MAIS CÍLIOS. Vi sua solicitação para ${formatDateBR(targetDate)}${requestedTime ? ` às ${requestedTime}` : ''}. Vamos confirmar seu horário?`
+                      ? `Olá ${item.clientName}! Aqui é a Duda do estúdio MAIS CÍLIOS. Vi sua solicitação para ${formatDateBR(targetDate)}${formattedTimeInMsg}. Vamos confirmar seu horário?`
                       : `Olá ${item.clientName}! Aqui é a Duda do estúdio MAIS CÍLIOS. Vamos combinar a data da sua próxima manutenção?`;
 
                     const statusLabel = isConfirmed
                       ? 'Confirmado'
                       : isPendingPartner
-                        ? 'Aguardando aprovação da Laís'
-                        : item.isJoint && item.partner?.approvedByProfessional
-                          ? 'Aguardando sua aprovação'
-                          : 'Aguardando confirmação';
+                        ? 'Aguardando Laís'
+                        : 'Aguardando confirmação';
 
                     return (
                       <div
@@ -843,7 +851,9 @@ export function DudaPanel({
                             </span>
                             {item.returnDate && (
                               <span className="tabular-nums">
-                                Data prevista:{' '}
+                                {item.returnOption === 'specific_date'
+                                  ? 'Data escolhida:'
+                                  : 'Data prevista:'}{' '}
                                 <strong className="text-brand-strong">
                                   {formatDateBR(item.returnDate)}
                                 </strong>
@@ -851,7 +861,9 @@ export function DudaPanel({
                             )}
                             {item.desiredTime && (
                               <span className="tabular-nums">
-                                Horário desejado:{' '}
+                                {isValidHHMMTime(item.desiredTime)
+                                  ? 'Horário desejado:'
+                                  : 'Preferência:'}{' '}
                                 <strong className="text-brand-strong">
                                   {item.desiredTime}
                                 </strong>
@@ -859,7 +871,7 @@ export function DudaPanel({
                             )}
                             {item.proposedDate && item.proposedTime && (
                               <span className="tabular-nums">
-                                Horário sincronizado:{' '}
+                                Horário confirmado:{' '}
                                 <strong className="text-brand-strong">
                                   {formatDateBR(item.proposedDate)} às {item.proposedTime}
                                 </strong>
@@ -879,15 +891,15 @@ export function DudaPanel({
                                 {item.partner.procedures.join(', ')}
                               </p>
                               <p>
-                                Status da Laís:{' '}
+                                Status / horário da Laís:{' '}
                                 <strong className="text-text-primary">
-                                  {item.partner.status === 'confirmed'
-                                    ? 'Confirmado'
-                                    : item.partner.approvedByProfessional &&
-                                        item.partner.proposedDate &&
-                                        item.partner.proposedTime
-                                      ? `Aprovou ${formatDateBR(item.partner.proposedDate)} às ${item.partner.proposedTime}`
-                                      : 'Aguardando aprovação'}
+                                  {item.partner.status === 'confirmed' &&
+                                  item.partner.proposedDate &&
+                                  item.partner.proposedTime
+                                    ? `Confirmado para ${formatDateBR(item.partner.proposedDate)} às ${item.partner.proposedTime}`
+                                    : item.partner.status === 'confirmed'
+                                      ? 'Confirmado'
+                                      : 'Aguardando confirmação dela'}
                                 </strong>
                               </p>
                             </div>
@@ -931,12 +943,7 @@ export function DudaPanel({
                               <CalendarPlus className="w-4 h-4" />
                               <span>
                                 {item.isJoint
-                                  ? item.partner?.approvedByProfessional &&
-                                    !item.approvedByProfessional
-                                    ? 'Aprovar horário conjunto'
-                                    : item.status === 'pending_partner'
-                                      ? 'Alterar horário sugerido'
-                                      : 'Definir horário conjunto'
+                                  ? 'Confirmar meu horário'
                                   : 'Adicionar à agenda'}
                               </span>
                             </button>

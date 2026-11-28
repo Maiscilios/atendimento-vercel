@@ -6,6 +6,7 @@ import {
   getBrazilTodayISO,
   getReturnOptionLabel,
   getServicesCatalog,
+  isValidHHMMTime,
   type AttendanceRecord,
   type Professional,
 } from '../../../shared/catalog';
@@ -154,13 +155,14 @@ export function AgendaBookingModal({
       setClientName(req.clientName);
       setWhatsapp(req.whatsapp);
       setAppointmentDate(
-        req.partner?.proposedDate ||
-          req.proposedDate ||
+        req.proposedDate ||
           req.returnDate ||
+          req.partner?.proposedDate ||
           getBrazilTodayISO(),
       );
+      const candidateTime = req.proposedTime || req.desiredTime || '';
       setAppointmentTime(
-        req.partner?.proposedTime || req.proposedTime || req.desiredTime || ''
+        candidateTime && isValidHHMMTime(candidateTime) ? candidateTime : '',
       );
       setNotes(req.notes || '');
 
@@ -240,14 +242,14 @@ export function AgendaBookingModal({
               notes: notes.trim(),
             });
 
-        const partnerLabel =
-          state.request.professional === 'lais' ? 'Duda' : 'Laís';
+        const profName =
+          state.request.professional === 'lais' ? 'Laís' : 'Duda';
         const message =
           res.status === 'confirmed' && res.appointment
             ? state.request.isJoint
-              ? `Agendamento conjunto de ${res.appointment.clientName} confirmado nas agendas da Laís e da Duda em ${formatDateBR(res.appointment.appointmentDate)} às ${res.appointment.appointmentTime}.`
+              ? `Agendamento conjunto de ${res.appointment.clientName} confirmado na agenda da ${profName} em ${formatDateBR(res.appointment.appointmentDate)} às ${res.appointment.appointmentTime}.`
               : `Agendamento de ${res.appointment.clientName} confirmado em ${formatDateBR(res.appointment.appointmentDate)} às ${res.appointment.appointmentTime}.`
-            : `Horário sincronizado (${formatDateBR(appointmentDate)} às ${normalizedTime}) enviado para ${partnerLabel} aprovar.`;
+            : `Horário salvo para ${formatDateBR(appointmentDate)} às ${normalizedTime}.`;
 
         onSaved({
           appointment: res.appointment,
@@ -322,12 +324,6 @@ export function AgendaBookingModal({
   }
 
   const profLabel = activeProfessional === 'duda' ? 'Duda' : 'Laís';
-  const partnerMatchesCurrentSlot =
-    state.kind === 'confirm-return-request' &&
-    state.request.isJoint &&
-    Boolean(state.request.partner?.approvedByProfessional) &&
-    state.request.partner?.proposedDate === appointmentDate &&
-    state.request.partner?.proposedTime === appointmentTime.trim();
 
   return (
     <div
@@ -341,7 +337,7 @@ export function AgendaBookingModal({
           <div>
             <h3 id="agenda-booking-title" className="font-display text-2xl font-bold text-brand-strong">
               {state.kind === 'confirm-return-request' && state.request.isJoint
-                ? 'Agendamento conjunto · Sincronizar'
+                ? 'Agendamento conjunto · Confirmar horário'
                 : state.kind === 'confirm-request' ||
                     state.kind === 'confirm-return-request'
                   ? 'Adicionar à agenda'
@@ -394,10 +390,26 @@ export function AgendaBookingModal({
               </p>
               {state.request.returnDate && (
                 <p className="tabular-nums">
-                  Data prevista solicitada:{' '}
+                  {state.request.returnOption === 'specific_date'
+                    ? 'Data escolhida pela cliente:'
+                    : 'Data prevista solicitada:'}{' '}
                   <strong className="text-text-primary">
                     {formatDateBR(state.request.returnDate)}
-                    {state.request.desiredTime ? ` às ${state.request.desiredTime}` : ''}
+                    {state.request.desiredTime
+                      ? isValidHHMMTime(state.request.desiredTime)
+                        ? ` às ${state.request.desiredTime}`
+                        : ` (${state.request.desiredTime})`
+                      : ''}
+                  </strong>
+                </p>
+              )}
+              {!state.request.returnDate && state.request.desiredTime && (
+                <p className="tabular-nums">
+                  {isValidHHMMTime(state.request.desiredTime)
+                    ? 'Horário desejado:'
+                    : 'Preferência informada pela cliente:'}{' '}
+                  <strong className="text-text-primary">
+                    {state.request.desiredTime}
                   </strong>
                 </p>
               )}
@@ -416,20 +428,18 @@ export function AgendaBookingModal({
                     </strong>
                     : {state.request.partner.procedures.join(', ')}
                   </p>
-                  {state.request.partner.approvedByProfessional &&
+                  {state.request.partner.status === 'confirmed' &&
                   state.request.partner.proposedDate &&
                   state.request.partner.proposedTime ? (
                     <p className="font-semibold text-brand-strong tabular-nums">
-                      Horário sugerido pela{' '}
+                      Horário confirmado da{' '}
                       {state.request.partner.professional === 'lais' ? 'Laís' : 'Duda'}:{' '}
                       {formatDateBR(state.request.partner.proposedDate)} às{' '}
-                      {state.request.partner.proposedTime}. Confirme este mesmo horário
-                      para gravar nas duas agendas ou ajuste para sugerir outro.
+                      {state.request.partner.proposedTime}. Combine e confirme o seu próprio horário com a cliente.
                     </p>
                   ) : (
                     <p>
-                      A confirmação final nas duas agendas ocorrerá após a aprovação da{' '}
-                      {state.request.partner.professional === 'lais' ? 'Laís' : 'Duda'}.
+                      Aguardando confirmação dela — cada profissional combina e confirma o seu próprio horário com a cliente.
                     </p>
                   )}
                 </div>
@@ -579,11 +589,7 @@ export function AgendaBookingModal({
                   ? 'Salvando...'
                   : state.kind === 'edit'
                     ? 'Salvar alterações'
-                    : state.kind === 'confirm-return-request' && state.request.isJoint
-                      ? partnerMatchesCurrentSlot
-                        ? 'Aprovar e confirmar nas duas agendas'
-                        : 'Propor horário sincronizado'
-                      : 'Confirmar e adicionar à agenda'}
+                    : 'Confirmar e adicionar à agenda'}
               </span>
             </button>
           </div>

@@ -146,6 +146,7 @@ export interface SubmitAttendancePayload {
   additionals: string[];
   extraReturnServiceIds?: string[];
   returnOption: ReturnOption;
+  returnDate?: string | null;
   preferredTimes: string[];
   serviceDate: string;
   idempotencyKey?: string;

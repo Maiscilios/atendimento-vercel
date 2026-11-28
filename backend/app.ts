@@ -8,8 +8,8 @@ import {
   DUDA_RETURN_OPTIONS,
   LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
+  RETURN_PERIOD_OPTIONS,
   SERVICE_CATEGORIES,
-  TIME_SLOTS,
   addDaysToISO,
   calculateReturnDateISO,
   classifyServiceCategory,
@@ -18,6 +18,7 @@ import {
   formatBrazilPhone,
   getBrazilTodayISO,
   getServicesCatalog,
+  isValidHHMMTime,
   normalizeWhatsAppDigits,
 } from '../shared/catalog.ts';
 import type {
@@ -632,6 +633,7 @@ export function createApiApp() {
         additionals?: unknown;
         extraReturnServiceIds?: unknown;
         returnOption?: unknown;
+        returnDate?: unknown;
         preferredTimes?: unknown;
         serviceDate?: unknown;
         idempotencyKey?: unknown;
@@ -767,24 +769,47 @@ export function createApiApp() {
         : getBrazilTodayISO();
 
       const returnDays = returnOptionMeta.days;
-      const returnDate =
-        returnDays !== null
-          ? calculateReturnDateISO(serviceDate, returnDays)
-          : null;
+      let returnDate: string | null = null;
+      if (returnOptionMeta.value === 'specific_date') {
+        if (!isValidISODate(body.returnDate)) {
+          res.status(400).json({
+            error: 'Selecione no calendário uma data válida para o retorno.',
+          });
+          return;
+        }
+        if (body.returnDate < getBrazilTodayISO()) {
+          res.status(400).json({
+            error: 'Selecione uma data futura para o próximo retorno.',
+          });
+          return;
+        }
+        returnDate = body.returnDate;
+      } else if (returnDays !== null) {
+        returnDate = calculateReturnDateISO(serviceDate, returnDays);
+      }
 
       let preferredTimes: string[] = [];
-      if (returnDays !== null && Array.isArray(body.preferredTimes)) {
-        const uniqueTimes: string[] = [];
+      if (returnDate !== null && Array.isArray(body.preferredTimes)) {
+        let pickedPeriod: string | null = null;
+        const uniqueHours: string[] = [];
         for (const slot of body.preferredTimes) {
+          if (typeof slot !== 'string') continue;
+          const trimmed = slot.trim();
           if (
-            typeof slot === 'string' &&
-            TIME_SLOTS.includes(slot) &&
-            !uniqueTimes.includes(slot)
+            !pickedPeriod &&
+            (RETURN_PERIOD_OPTIONS as readonly string[]).includes(trimmed)
           ) {
-            uniqueTimes.push(slot);
+            pickedPeriod = trimmed;
+            continue;
+          }
+          if (isValidHHMMTime(trimmed) && !uniqueHours.includes(trimmed)) {
+            uniqueHours.push(trimmed);
           }
         }
-        preferredTimes = uniqueTimes.slice(0, 1);
+        preferredTimes = [
+          ...(pickedPeriod ? [pickedPeriod] : []),
+          ...uniqueHours.slice(0, 3),
+        ];
       }
 
       const returnStatus =

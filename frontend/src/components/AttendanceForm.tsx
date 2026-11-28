@@ -6,6 +6,9 @@ import {
   Calendar,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
   Loader2,
   Pencil,
   Plus,
@@ -19,6 +22,8 @@ import {
   LAIS_LASH_TYPE_SERVICE_IDS,
   LAIS_RETURN_OPTIONS,
   LAIS_SERVICES,
+  RETURN_HOUR_OPTIONS_BY_PERIOD,
+  RETURN_PERIOD_OPTIONS,
   addDaysToISO,
   calculateReturnDateISO,
   findStudioServiceById,
@@ -26,6 +31,8 @@ import {
   formatBrazilPhone,
   formatBrazilTimeBR,
   formatDateBR,
+  formatPreferredScheduleSummary,
+  getBrazilTodayISO,
   getLocalDateISO,
   getReturnOptionLabel,
   getServicesCatalog,
@@ -35,6 +42,7 @@ import {
   type LashAttendanceType,
   type Professional,
   type ReturnOption,
+  type ReturnPeriod,
 } from '../../../shared/catalog';
 import {
   lookupClientsByWhatsapp,
@@ -71,6 +79,150 @@ function generateIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+const CALENDAR_WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const CALENDAR_MONTHS = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+
+function parseISOYearMonth(iso: string): { year: number; month: number } {
+  const [y, m] = iso.split('-').map(Number);
+  return {
+    year: Number.isFinite(y) ? y : 2026,
+    month: Number.isFinite(m) ? m : 1,
+  };
+}
+
+function toISODate(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+interface ReturnDateCalendarProps {
+  value: string;
+  minDate: string;
+  onSelect: (isoDate: string) => void;
+}
+
+function ReturnDateCalendar({
+  value,
+  minDate,
+  onSelect,
+}: ReturnDateCalendarProps) {
+  const initialYM = parseISOYearMonth(value || minDate);
+  const minYM = parseISOYearMonth(minDate);
+  const [viewYear, setViewYear] = useState(initialYM.year);
+  const [viewMonth, setViewMonth] = useState(initialYM.month);
+
+  const canGoPrev =
+    viewYear > minYM.year || (viewYear === minYM.year && viewMonth > minYM.month);
+
+  function goPrevMonth() {
+    if (!canGoPrev) return;
+    if (viewMonth === 1) {
+      setViewYear((y) => y - 1);
+      setViewMonth(12);
+    } else {
+      setViewMonth((m) => m - 1);
+    }
+  }
+
+  function goNextMonth() {
+    if (viewMonth === 12) {
+      setViewYear((y) => y + 1);
+      setViewMonth(1);
+    } else {
+      setViewMonth((m) => m + 1);
+    }
+  }
+
+  const firstDayWeekday = new Date(viewYear, viewMonth - 1, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
+  const cells: Array<{ day: number; iso: string } | null> = [];
+  for (let i = 0; i < firstDayWeekday; i += 1) {
+    cells.push(null);
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push({ day, iso: toISODate(viewYear, viewMonth, day) });
+  }
+
+  return (
+    <div className="rounded-2xl bg-surface border border-brand/35 p-3.5 sm:p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={goPrevMonth}
+          disabled={!canGoPrev}
+          aria-label="Mês anterior"
+          className="min-h-[38px] min-w-[38px] rounded-xl border border-border flex items-center justify-center btn-ghost disabled:opacity-35 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-sm sm:text-base font-semibold text-brand-strong">
+          {CALENDAR_MONTHS[viewMonth - 1]} de {viewYear}
+        </span>
+        <button
+          type="button"
+          onClick={goNextMonth}
+          aria-label="Próximo mês"
+          className="min-h-[38px] min-w-[38px] rounded-xl border border-border flex items-center justify-center btn-ghost"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center">
+        {CALENDAR_WEEKDAYS.map((weekday) => (
+          <div
+            key={weekday}
+            className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary py-1"
+          >
+            {weekday}
+          </div>
+        ))}
+        {cells.map((cell, idx) => {
+          if (!cell) {
+            return <div key={`empty-${idx}`} className="h-10" />;
+          }
+          const isPast = cell.iso < minDate;
+          const isSelected = cell.iso === value;
+          const isToday = cell.iso === minDate;
+          return (
+            <button
+              key={cell.iso}
+              type="button"
+              disabled={isPast}
+              onClick={() => onSelect(cell.iso)}
+              aria-pressed={isSelected}
+              aria-label={`Selecionar ${formatDateBR(cell.iso)}`}
+              className={`h-10 rounded-xl text-sm tabular-nums transition-colors ${
+                isPast
+                  ? 'text-text-secondary/35 cursor-not-allowed'
+                  : isSelected
+                    ? 'bg-brand-strong text-surface font-bold shadow-sm'
+                    : isToday
+                      ? 'bg-brand-soft/80 border border-brand/50 text-brand-strong font-semibold hover:bg-brand/20'
+                      : 'bg-background border border-border/70 text-text-primary font-medium hover:border-brand/60 hover:bg-brand-soft/50'
+              }`}
+            >
+              {cell.day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   const isDuda = professional === 'duda';
   const servicesCatalog = getServicesCatalog(professional);
@@ -105,12 +257,20 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     'yes' | 'no' | null
   >(null);
   const [returnOption, setReturnOption] = useState<ReturnOption | null>(null);
+  const [specificReturnDate, setSpecificReturnDate] = useState('');
+  const [preferredPeriod, setPreferredPeriod] = useState<ReturnPeriod | null>(
+    null,
+  );
+  const [selectedPreferredHours, setSelectedPreferredHours] = useState<
+    string[]
+  >([]);
   const [showExtraProceduresPicker, setShowExtraProceduresPicker] =
     useState(false);
   const [extraReturnServiceIds, setExtraReturnServiceIds] = useState<string[]>(
     [],
   );
   const [serviceDate] = useState<string>(() => getLocalDateISO());
+  const brazilToday = useMemo(() => getBrazilTodayISO(), []);
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() =>
     generateIdempotencyKey(),
@@ -262,6 +422,31 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     );
   }, [selectedReturnMeta, serviceDate]);
 
+  const effectiveReturnDate = useMemo(() => {
+    if (returnOption === 'specific_date') {
+      return specificReturnDate || null;
+    }
+    return calculatedReturnDate;
+  }, [returnOption, specificReturnDate, calculatedReturnDate]);
+
+  const preferredTimesPayload = useMemo(() => {
+    if (!effectiveReturnDate) return [];
+    return [
+      ...(preferredPeriod ? [preferredPeriod] : []),
+      ...selectedPreferredHours.slice(0, 3),
+    ];
+  }, [effectiveReturnDate, preferredPeriod, selectedPreferredHours]);
+
+  const preferredTimesSummary = useMemo(
+    () => formatPreferredScheduleSummary(preferredTimesPayload),
+    [preferredTimesPayload],
+  );
+
+  const availableHourSlots = useMemo(
+    () => RETURN_HOUR_OPTIONS_BY_PERIOD[preferredPeriod ?? 'Qualquer período'],
+    [preferredPeriod],
+  );
+
   const selectedExtraReturnServices = useMemo<ExtraReturnService[]>(
     () =>
       extraReturnServiceIds
@@ -337,6 +522,9 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setWantsToScheduleReturn(answer);
     if (answer === 'no') {
       setReturnOption('no_schedule');
+      setSpecificReturnDate('');
+      setPreferredPeriod(null);
+      setSelectedPreferredHours([]);
       setShowExtraProceduresPicker(false);
       setExtraReturnServiceIds([]);
     } else if (returnOption === 'no_schedule') {
@@ -347,6 +535,34 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
   function handleSelectReturnOption(option: ReturnOption) {
     setErrorMessage('');
     setReturnOption(option);
+    if (option === 'to_arrange' || option === 'no_schedule') {
+      setSpecificReturnDate('');
+      setPreferredPeriod(null);
+      setSelectedPreferredHours([]);
+    }
+  }
+
+  function handleSelectSpecificDate(isoDate: string) {
+    setErrorMessage('');
+    setSpecificReturnDate(isoDate);
+  }
+
+  function handleSelectPreferredPeriod(period: ReturnPeriod) {
+    setErrorMessage('');
+    setPreferredPeriod(period);
+  }
+
+  function togglePreferredHour(hour: string) {
+    setErrorMessage('');
+    setSelectedPreferredHours((prev) => {
+      if (prev.includes(hour)) {
+        return prev.filter((item) => item !== hour);
+      }
+      if (prev.length >= 3) {
+        return prev;
+      }
+      return [...prev, hour];
+    });
   }
 
   function handleWhatsappStep1Change(rawValue: string) {
@@ -417,6 +633,9 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
     setSelectedAdditionals([]);
     setWantsToScheduleReturn(null);
     setReturnOption(null);
+    setSpecificReturnDate('');
+    setPreferredPeriod(null);
+    setSelectedPreferredHours([]);
     setShowExtraProceduresPicker(false);
     setExtraReturnServiceIds([]);
     setErrorMessage('');
@@ -520,6 +739,22 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
       );
       return false;
     }
+    if (
+      wantsToScheduleReturn === 'yes' &&
+      returnOption === 'specific_date' &&
+      (!specificReturnDate || specificReturnDate < brazilToday)
+    ) {
+      setErrorMessage(
+        'Por favor, selecione no calendário uma data futura para o seu retorno.',
+      );
+      return false;
+    }
+    if (wantsToScheduleReturn === 'yes' && effectiveReturnDate && !preferredPeriod) {
+      setErrorMessage(
+        'Por favor, selecione o período de preferência (ou toque em "Qualquer período").',
+      );
+      return false;
+    }
     return true;
   }
 
@@ -589,7 +824,9 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
         extraReturnServiceIds:
           returnOption === 'no_schedule' ? [] : extraReturnServiceIds,
         returnOption,
-        preferredTimes: [],
+        returnDate:
+          returnOption === 'specific_date' ? specificReturnDate : undefined,
+        preferredTimes: preferredTimesPayload,
         serviceDate,
         idempotencyKey,
       });
@@ -667,7 +904,11 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
               </div>
               {confirmation.returnDate && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-text-secondary">Data prevista</span>
+                  <span className="text-text-secondary">
+                    {confirmation.returnOption === 'specific_date'
+                      ? 'Data escolhida'
+                      : 'Data prevista'}
+                  </span>
                   <span className="font-semibold text-brand-strong tabular-nums">
                     {formatDateBR(confirmation.returnDate)}
                   </span>
@@ -675,9 +916,12 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
               )}
               {confirmation.preferredTimes.length > 0 && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-text-secondary">Período escolhido</span>
-                  <span className="font-medium text-text-primary">
-                    {confirmation.preferredTimes[0]}
+                  <span className="text-text-secondary">
+                    Período e horários
+                  </span>
+                  <span className="font-medium text-text-primary text-right tabular-nums">
+                    {formatPreferredScheduleSummary(confirmation.preferredTimes) ??
+                      confirmation.preferredTimes.join(' · ')}
                   </span>
                 </div>
               )}
@@ -704,8 +948,8 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                 {confirmation.extraReturnServices?.some(
                   (svc) => svc.professional !== confirmation.professional,
                 )
-                  ? 'Laís e Duda receberão sua solicitação conjunta para sincronizar os horários e confirmar com você pelo WhatsApp.'
-                  : `${professionalName} verificará a disponibilidade na agenda e confirmará com você pelo WhatsApp.`}
+                  ? 'Laís e Duda receberão sua solicitação conjunta com a data desejada para que cada uma combine e confirme seu próprio horário com você pelo WhatsApp.'
+                  : `${professionalName} verificará a disponibilidade na agenda e confirmará o horário com você pelo WhatsApp.`}
               </p>
             )}
 
@@ -1369,27 +1613,152 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                         <p className="pt-3 border-t border-border/80 text-sm sm:text-base font-medium text-brand-strong leading-relaxed">
                           {isDuda
                             ? 'A Duda consultará a disponibilidade para o dia escolhido e entrará em contato para definir o melhor horário. 🩷'
-                            : `${professionalName} verificará a disponibilidade e confirmará o horário com você pelo WhatsApp.`}
+                            : 'A Laís consultará a disponibilidade para o dia escolhido e entrará em contato pelo WhatsApp para definir o melhor horário. 🩷'}
                         </p>
                       </div>
                     )}
 
-                    {returnOption === 'to_arrange' &&
-                      (isDuda ? (
-                        <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft border-2 border-brand/45 shadow-sm space-y-1.5">
-                          <p className="text-base font-bold text-brand-strong">
-                            Vamos combinar pelo WhatsApp! 🩷
-                          </p>
-                          <p className="text-sm sm:text-base text-text-primary leading-relaxed">
-                            A Duda entrará em contato com você para escolher o
-                            melhor dia e horário para sua próxima manutenção.
+                    {returnOption === 'specific_date' && (
+                      <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft border-2 border-brand/45 shadow-sm space-y-3.5">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-brand-strong">
+                            <Calendar className="w-5 h-5 shrink-0" />
+                            <span className="text-sm sm:text-base font-semibold">
+                              Escolha a data desejada no calendário
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm text-text-secondary">
+                            Selecione qualquer data futura disponível. A confirmação do horário será feita após combinar pelo WhatsApp.
                           </p>
                         </div>
-                      ) : (
-                        <p className="text-sm text-text-secondary bg-background border border-border rounded-2xl px-4 py-3">
-                          Combinaremos o melhor dia com você pelo WhatsApp.
+
+                        <ReturnDateCalendar
+                          value={specificReturnDate}
+                          minDate={brazilToday}
+                          onSelect={handleSelectSpecificDate}
+                        />
+
+                        {specificReturnDate && (
+                          <div className="pt-3 border-t border-border/80 space-y-2">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                              <span className="text-sm font-semibold text-brand-strong">
+                                Data desejada escolhida:
+                              </span>
+                              <span className="text-2xl font-bold tracking-tight text-brand-strong tabular-nums">
+                                {formatDateBR(specificReturnDate)}
+                              </span>
+                            </div>
+                            <p className="text-sm font-medium text-brand-strong leading-relaxed">
+                              {isDuda
+                                ? 'A Duda consultará a disponibilidade para o dia escolhido e entrará em contato pelo WhatsApp para confirmar o melhor horário. 🩷'
+                                : 'A Laís consultará a disponibilidade para o dia escolhido e entrará em contato pelo WhatsApp para confirmar o melhor horário. 🩷'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {effectiveReturnDate && (
+                      <div className="p-4 sm:p-5 rounded-2xl bg-surface border-2 border-brand/35 shadow-sm space-y-4">
+                        <div className="space-y-2.5">
+                          <div className="flex items-center gap-2 text-brand-strong">
+                            <Clock className="w-4 h-4 shrink-0" />
+                            <p className="text-sm sm:text-base font-semibold">
+                              Qual período você prefere?
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {RETURN_PERIOD_OPTIONS.map((period) => {
+                              const active = preferredPeriod === period;
+                              return (
+                                <button
+                                  key={period}
+                                  type="button"
+                                  onClick={() => handleSelectPreferredPeriod(period)}
+                                  aria-pressed={active}
+                                  className={`min-h-[46px] px-3 py-2 rounded-2xl border text-sm font-semibold transition-colors flex items-center justify-center text-center ${
+                                    active ? 'choice-selected' : 'choice-idle'
+                                  }`}
+                                >
+                                  {period}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2.5 pt-3 border-t border-border">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-text-primary">
+                                Horários de preferência (opcional)
+                              </p>
+                              <p className="text-xs text-text-secondary">
+                                Selecione até 3 horários de preferência para ajudar na organização da agenda.
+                              </p>
+                            </div>
+                            <span className="text-xs font-bold text-brand-strong tabular-nums">
+                              {selectedPreferredHours.length}/3 selecionados
+                            </span>
+                          </div>
+
+                          {selectedPreferredHours.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {selectedPreferredHours.map((hour) => (
+                                <button
+                                  key={`picked-${hour}`}
+                                  type="button"
+                                  onClick={() => togglePreferredHour(hour)}
+                                  className="min-h-[34px] px-3 py-1 rounded-xl bg-brand-soft border border-brand/50 text-xs sm:text-sm font-semibold text-brand-strong inline-flex items-center gap-1.5 tabular-nums hover:bg-brand/20 transition-colors"
+                                >
+                                  <span>{hour}</span>
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                            {availableHourSlots.map((hour) => {
+                              const active = selectedPreferredHours.includes(hour);
+                              const disabled =
+                                !active && selectedPreferredHours.length >= 3;
+                              return (
+                                <button
+                                  key={hour}
+                                  type="button"
+                                  disabled={disabled}
+                                  onClick={() => togglePreferredHour(hour)}
+                                  aria-pressed={active}
+                                  className={`min-h-[42px] px-2.5 py-2 rounded-xl border text-sm font-semibold tabular-nums transition-colors ${
+                                    active
+                                      ? 'choice-selected'
+                                      : disabled
+                                        ? 'bg-background border-border/60 text-text-secondary/40 cursor-not-allowed'
+                                        : 'choice-idle'
+                                  }`}
+                                >
+                                  {hour}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {returnOption === 'to_arrange' && (
+                      <div className="p-4 sm:p-5 rounded-2xl bg-brand-soft border-2 border-brand/45 shadow-sm space-y-1.5">
+                        <p className="text-base font-bold text-brand-strong">
+                          Vamos combinar pelo WhatsApp! 🩷
                         </p>
-                      ))}
+                        <p className="text-sm sm:text-base text-text-primary leading-relaxed">
+                          {isDuda
+                            ? 'A Duda entrará em contato com você para escolher o melhor dia e horário para sua próxima manutenção.'
+                            : 'A Laís entrará em contato com você para escolher o melhor dia e horário para o seu retorno.'}
+                        </p>
+                      </div>
+                    )}
 
                     {returnOption && returnOption !== 'no_schedule' && (
                       <div className="space-y-3 pt-1">
@@ -1435,9 +1804,10 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                             </div>
                             {hasJointReturnBooking && (
                               <p className="text-xs font-medium text-brand-strong leading-relaxed">
-                                Agendamento conjunto: a solicitação será enviada
-                                para as agendas da Laís e da Duda com horário
-                                sincronizado e aprovação das duas profissionais. 🩷
+                                Agendamento conjunto: a mesma data desejada será
+                                encaminhada para a Laís e para a Duda, permitindo que
+                                cada profissional combine e confirme seu próprio
+                                horário com você pelo WhatsApp. 🩷
                               </p>
                             )}
                           </div>
@@ -1718,13 +2088,26 @@ export function AttendanceForm({ professional, onBack }: AttendanceFormProps) {
                     </dd>
                   </div>
 
-                  {calculatedReturnDate && (
+                  {effectiveReturnDate && (
                     <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
                       <dt className="text-text-secondary">
-                        Data prevista de retorno
+                        {returnOption === 'specific_date'
+                          ? 'Data escolhida para retorno'
+                          : 'Data prevista de retorno'}
                       </dt>
                       <dd className="font-semibold text-brand-strong tabular-nums sm:text-right">
-                        {formatDateBR(calculatedReturnDate)}
+                        {formatDateBR(effectiveReturnDate)}
+                      </dd>
+                    </div>
+                  )}
+
+                  {effectiveReturnDate && preferredTimesSummary && (
+                    <div className="py-3.5 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
+                      <dt className="text-text-secondary">
+                        Período e horários de preferência
+                      </dt>
+                      <dd className="font-semibold text-text-primary tabular-nums sm:text-right">
+                        {preferredTimesSummary}
                       </dd>
                     </div>
                   )}

@@ -5,6 +5,7 @@ import { publishNotificationEvent } from './notificationsBus.ts';
 import {
   formatBrazilPhone,
   formatDateBR,
+  formatPreferredScheduleSummary,
   getBrazilTodayISO,
   normalizeWhatsAppDigits,
   type AttendanceRecord,
@@ -80,7 +81,7 @@ const SCHEMA = `
     total_paid NUMERIC(12, 2) NOT NULL,
     commission_rate NUMERIC(5, 4) NOT NULL,
     commission_amount NUMERIC(12, 2) NOT NULL,
-    return_option TEXT NOT NULL CHECK(return_option IN ('15_days', '20_days', '25_days', 'to_arrange', 'no_schedule')),
+    return_option TEXT NOT NULL CHECK(return_option IN ('15_days', '20_days', '25_days', '30_days', 'to_arrange', 'specific_date', 'no_schedule')),
     return_days INTEGER,
     return_date TEXT,
     preferred_times_json TEXT NOT NULL,
@@ -93,6 +94,9 @@ const SCHEMA = `
   ALTER TABLE attendances ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
   ALTER TABLE attendances ADD COLUMN IF NOT EXISTS client_id TEXT REFERENCES clients(id) ON DELETE SET NULL;
   ALTER TABLE attendances ADD COLUMN IF NOT EXISTS extra_return_services_json TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE attendances DROP CONSTRAINT IF EXISTS attendances_return_option_check;
+  ALTER TABLE attendances ADD CONSTRAINT attendances_return_option_check
+    CHECK(return_option IN ('15_days', '20_days', '25_days', '30_days', 'to_arrange', 'specific_date', 'no_schedule'));
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_attendances_idempotency
     ON attendances(idempotency_key)
@@ -156,7 +160,7 @@ const SCHEMA = `
     whatsapp TEXT NOT NULL,
     whatsapp_digits TEXT NOT NULL,
     service_date TEXT NOT NULL,
-    return_option TEXT NOT NULL CHECK(return_option IN ('15_days', '20_days', '25_days', 'to_arrange', 'specific_date', 'no_schedule')),
+    return_option TEXT NOT NULL CHECK(return_option IN ('15_days', '20_days', '25_days', '30_days', 'to_arrange', 'specific_date', 'no_schedule')),
     return_date TEXT,
     desired_time TEXT,
     source TEXT NOT NULL DEFAULT 'attendance_form',
@@ -177,7 +181,7 @@ const SCHEMA = `
   ALTER TABLE return_requests ALTER COLUMN source_attendance_id DROP NOT NULL;
   ALTER TABLE return_requests DROP CONSTRAINT IF EXISTS return_requests_return_option_check;
   ALTER TABLE return_requests ADD CONSTRAINT return_requests_return_option_check
-    CHECK(return_option IN ('15_days', '20_days', '25_days', 'to_arrange', 'specific_date', 'no_schedule'));
+    CHECK(return_option IN ('15_days', '20_days', '25_days', '30_days', 'to_arrange', 'specific_date', 'no_schedule'));
   ALTER TABLE return_requests ADD COLUMN IF NOT EXISTS desired_time TEXT;
   ALTER TABLE return_requests ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'attendance_form';
   ALTER TABLE return_requests ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
@@ -1170,6 +1174,9 @@ export async function insertAttendance(
       const targetProfs: Professional[] = hasOther
         ? [input.professional, otherProf]
         : [input.professional];
+      const preferredSummary = formatPreferredScheduleSummary(
+        input.preferredTimes,
+      );
 
       for (const prof of targetProfs) {
         const reqId = crypto.randomUUID();
@@ -1184,7 +1191,7 @@ export async function insertAttendance(
           serviceDate: input.serviceDate,
           returnOption: input.returnOption,
           returnDate: input.returnDate,
-          desiredTime: null,
+          desiredTime: preferredSummary,
           source: input.source ?? 'attendance_form',
           notes: '',
           procedures: grouped[prof],
@@ -1232,7 +1239,7 @@ export async function insertAttendance(
           clientName: resolvedClient.name,
           procedures: grouped[prof],
           desiredDate: input.returnDate,
-          desiredTime: input.preferredTimes[0] ?? null,
+          desiredTime: preferredSummary,
           isJoint: hasOther,
           relatedReturnRequestId: reqId,
           jointGroupId,
@@ -1382,6 +1389,9 @@ export async function insertAttendance(
       const targetProfs: Professional[] = hasOther
         ? [input.professional, otherProf]
         : [input.professional];
+      const preferredSummary = formatPreferredScheduleSummary(
+        input.preferredTimes,
+      );
 
       for (const prof of targetProfs) {
         const reqId = crypto.randomUUID();
@@ -1390,7 +1400,7 @@ export async function insertAttendance(
             id, source_attendance_id, client_id, professional, client_name, whatsapp, whatsapp_digits,
             service_date, return_option, return_date, desired_time, source, notes, procedures_json, is_joint, joint_group_id,
             proposed_date, proposed_time, approved_by_professional, status, appointment_id, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, '', $12, $13, $14, NULL, NULL, 0, 'waiting', NULL, $15, $15)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, '', $13, $14, $15, NULL, NULL, 0, 'waiting', NULL, $16, $16)
           ON CONFLICT (source_attendance_id, professional) WHERE source_attendance_id IS NOT NULL DO NOTHING`,
           [
             reqId,
@@ -1403,6 +1413,7 @@ export async function insertAttendance(
             input.serviceDate,
             input.returnOption,
             input.returnDate,
+            preferredSummary,
             input.source ?? 'attendance_form',
             JSON.stringify(grouped[prof]),
             hasOther ? 1 : 0,
@@ -1445,7 +1456,7 @@ export async function insertAttendance(
             clientName: resolvedClientName,
             procedures: grouped[prof],
             desiredDate: input.returnDate,
-            desiredTime: input.preferredTimes[0] ?? null,
+            desiredTime: preferredSummary,
             isJoint: hasOther,
             relatedReturnRequestId: reqId,
             jointGroupId,
@@ -2462,124 +2473,18 @@ export async function approveReturnRequest(input: {
       );
     }
 
-    const partnerAlreadyApprovedSameSlot =
-      partner.approvedByProfessional &&
-      partner.proposedDate === input.appointmentDate &&
-      partner.proposedTime === input.appointmentTime;
-
-    if (partnerAlreadyApprovedSameSlot) {
-      const partnerOwner = await findConfirmedSlotOwner(
-        partner.professional,
-        input.appointmentDate,
-        input.appointmentTime,
-      );
-      if (partnerOwner) {
-        throw new Error(
-          `CONFLICT:O horário ${input.appointmentTime} em ${formatDateBR(input.appointmentDate)} está ocupado na agenda da ${actorProfLabel(partner.professional)} (${partnerOwner.clientName}). Escolha outro horário para sincronizar.`,
-        );
-      }
-
-      const ownAppt = await createAgendaAppointment({
-        professional: current.professional,
-        sourceAttendanceId: current.sourceAttendanceId,
-        jointGroupId: current.jointGroupId,
-        clientName: current.clientName,
-        whatsapp: current.whatsapp,
-        whatsappDigits: current.whatsappDigits,
-        procedureName: input.procedureName.trim(),
-        appointmentDate: input.appointmentDate,
-        appointmentTime: input.appointmentTime,
-        notes: input.notes?.trim() ?? '',
-      });
-      const partnerAppt = await createAgendaAppointment({
-        professional: partner.professional,
-        sourceAttendanceId: partner.sourceAttendanceId,
-        jointGroupId: partner.jointGroupId,
-        clientName: partner.clientName,
-        whatsapp: partner.whatsapp,
-        whatsappDigits: partner.whatsappDigits,
-        procedureName: partner.procedures.join(', '),
-        appointmentDate: input.appointmentDate,
-        appointmentTime: input.appointmentTime,
-        notes: input.notes?.trim() ?? '',
-      });
-
-      const updatedCurrent: ReturnRequest = {
-        ...current,
-        procedures: input.procedureName
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-        proposedDate: input.appointmentDate,
-        proposedTime: input.appointmentTime,
-        approvedByProfessional: true,
-        status: 'confirmed',
-        appointmentId: ownAppt.id,
-        updatedAt: now,
-      };
-      const updatedPartner: ReturnRequest = {
-        ...partner,
-        proposedDate: input.appointmentDate,
-        proposedTime: input.appointmentTime,
-        approvedByProfessional: true,
-        status: 'confirmed',
-        appointmentId: partnerAppt.id,
-        updatedAt: now,
-      };
-      memoryReturnRequests.set(current.id, updatedCurrent);
-      memoryReturnRequests.set(partner.id, updatedPartner);
-
-      if (current.sourceAttendanceId) {
-        const sourceAtt = memoryAttendances.get(current.sourceAttendanceId);
-        if (sourceAtt) {
-          memoryAttendances.set(sourceAtt.id, {
-            ...sourceAtt,
-            returnStatus: 'confirmed',
-            updatedAt: now,
-          });
-        }
-      }
-
-      for (const recipient of ['lais', 'duda'] as Professional[]) {
-        const isCurrent = recipient === current.professional;
-        addMemoryNotification({
-          recipient,
-          type: 'joint_approved',
-          title: `Agendamento conjunto confirmado · ${current.clientName}`,
-          message: `Laís e Duda aprovaram o horário conjunto de ${current.clientName} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}.`,
-          requestTypeLabel: 'Confirmação de agendamento conjunto',
-          clientName: current.clientName,
-          procedures: isCurrent ? updatedCurrent.procedures : updatedPartner.procedures,
-          desiredDate: input.appointmentDate,
-          desiredTime: input.appointmentTime,
-          isJoint: true,
-          relatedReturnRequestId: isCurrent ? current.id : partner.id,
-          relatedAppointmentId: isCurrent ? ownAppt.id : partnerAppt.id,
-          jointGroupId: current.jointGroupId,
-          targetTab: 'agenda',
-          targetDate: input.appointmentDate,
-          targetProfessional: recipient,
-          createdAt: now,
-        });
-      }
-
-      return {
-        status: 'confirmed',
-        request: {
-          ...updatedCurrent,
-          partner: {
-            id: updatedPartner.id,
-            professional: updatedPartner.professional,
-            procedures: updatedPartner.procedures,
-            status: updatedPartner.status,
-            approvedByProfessional: updatedPartner.approvedByProfessional,
-            proposedDate: updatedPartner.proposedDate,
-            proposedTime: updatedPartner.proposedTime,
-          },
-        },
-        appointment: ownAppt,
-      };
-    }
+    const ownAppt = await createAgendaAppointment({
+      professional: current.professional,
+      sourceAttendanceId: current.sourceAttendanceId,
+      jointGroupId: current.jointGroupId,
+      clientName: current.clientName,
+      whatsapp: current.whatsapp,
+      whatsappDigits: current.whatsappDigits,
+      procedureName: input.procedureName.trim(),
+      appointmentDate: input.appointmentDate,
+      appointmentTime: input.appointmentTime,
+      notes: input.notes?.trim() ?? '',
+    });
 
     const updatedCurrent: ReturnRequest = {
       ...current,
@@ -2590,60 +2495,65 @@ export async function approveReturnRequest(input: {
       proposedDate: input.appointmentDate,
       proposedTime: input.appointmentTime,
       approvedByProfessional: true,
-      status: 'pending_partner',
-      updatedAt: now,
-    };
-    const updatedPartner: ReturnRequest = {
-      ...partner,
-      proposedDate: input.appointmentDate,
-      proposedTime: input.appointmentTime,
-      approvedByProfessional: false,
-      status: 'waiting',
+      status: 'confirmed',
+      appointmentId: ownAppt.id,
       updatedAt: now,
     };
     memoryReturnRequests.set(current.id, updatedCurrent);
-    memoryReturnRequests.set(partner.id, updatedPartner);
 
-    const isCounterProposal =
-      partner.proposedDate !== null && partner.proposedTime !== null;
+    const partnerConfirmed = partner.status === 'confirmed';
+    if (current.sourceAttendanceId && partnerConfirmed) {
+      const sourceAtt = memoryAttendances.get(current.sourceAttendanceId);
+      if (sourceAtt) {
+        memoryAttendances.set(sourceAtt.id, {
+          ...sourceAtt,
+          returnStatus: 'confirmed',
+          updatedAt: now,
+        });
+      }
+    }
+
     addMemoryNotification({
       recipient: partner.professional,
-      type: 'joint_proposed',
-      title: isCounterProposal
-        ? `Novo horário sugerido · ${current.clientName}`
-        : `Aprovação pendente · ${current.clientName}`,
-      message: `${actorProfLabel(current.professional)} ${isCounterProposal ? 'ajustou' : 'sugeriu'} o horário conjunto de ${current.clientName} para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. Confirme para sincronizar as duas agendas.`,
-      requestTypeLabel: isCounterProposal
-        ? 'Alteração de horário conjunto'
-        : 'Aprovação pela outra profissional',
+      type: 'joint_approved',
+      title: partnerConfirmed
+        ? `Agendamento conjunto confirmado · ${current.clientName}`
+        : `Horário confirmado (${actorProfLabel(current.professional)}) · ${current.clientName}`,
+      message: partnerConfirmed
+        ? `${actorProfLabel(current.professional)} confirmou o horário dela para ${current.clientName} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. As duas agendas estão confirmadas.`
+        : `${actorProfLabel(current.professional)} confirmou o horário dela para ${current.clientName} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. Combine e confirme o seu horário na agenda.`,
+      requestTypeLabel: partnerConfirmed
+        ? 'Confirmação de agendamento conjunto'
+        : `Horário confirmado pela ${actorProfLabel(current.professional)}`,
       clientName: current.clientName,
       procedures: partner.procedures,
       desiredDate: input.appointmentDate,
       desiredTime: input.appointmentTime,
       isJoint: true,
       relatedReturnRequestId: partner.id,
+      relatedAppointmentId: ownAppt.id,
       jointGroupId: current.jointGroupId,
-      targetTab: 'appointments',
+      targetTab: partnerConfirmed ? 'agenda' : 'appointments',
       targetDate: input.appointmentDate,
       targetProfessional: partner.professional,
       createdAt: now,
     });
 
     return {
-      status: 'pending_partner',
+      status: 'confirmed',
       request: {
         ...updatedCurrent,
         partner: {
-          id: updatedPartner.id,
-          professional: updatedPartner.professional,
-          procedures: updatedPartner.procedures,
-          status: updatedPartner.status,
-          approvedByProfessional: updatedPartner.approvedByProfessional,
-          proposedDate: updatedPartner.proposedDate,
-          proposedTime: updatedPartner.proposedTime,
+          id: partner.id,
+          professional: partner.professional,
+          procedures: partner.procedures,
+          status: partner.status,
+          approvedByProfessional: partner.approvedByProfessional,
+          proposedDate: partner.proposedDate,
+          proposedTime: partner.proposedTime,
         },
       },
-      appointment: null,
+      appointment: ownAppt,
     };
   }
 
@@ -2781,144 +2691,33 @@ export async function approveReturnRequest(input: {
       partnerProcs = [];
     }
 
-    const partnerAlreadyApprovedSameSlot =
-      partner.approved_by_professional === 1 &&
-      partner.proposed_date === input.appointmentDate &&
-      partner.proposed_time === input.appointmentTime;
-
-    if (partnerAlreadyApprovedSameSlot) {
-      const partnerOwner = await findConfirmedSlotOwner(
-        partner.professional,
-        input.appointmentDate,
-        input.appointmentTime,
-        undefined,
-        client,
-      );
-      if (partnerOwner) {
-        throw new Error(
-          `CONFLICT:O horário ${input.appointmentTime} em ${formatDateBR(input.appointmentDate)} está ocupado na agenda da ${actorProfLabel(partner.professional)} (${partnerOwner.clientName}). Escolha outro horário para sincronizar.`,
-        );
-      }
-
-      const ownAppt = await createAgendaAppointment(
-        {
-          professional: current.professional,
-          sourceAttendanceId: current.source_attendance_id,
-          jointGroupId: current.joint_group_id,
-          clientName: current.client_name,
-          whatsapp: current.whatsapp,
-          whatsappDigits: current.whatsapp_digits,
-          procedureName: input.procedureName.trim(),
-          appointmentDate: input.appointmentDate,
-          appointmentTime: input.appointmentTime,
-          notes: input.notes?.trim() ?? '',
-        },
-        client,
-      );
-
-      const partnerAppt = await createAgendaAppointment(
-        {
-          professional: partner.professional,
-          sourceAttendanceId: partner.source_attendance_id,
-          jointGroupId: partner.joint_group_id,
-          clientName: partner.client_name,
-          whatsapp: partner.whatsapp,
-          whatsappDigits: partner.whatsapp_digits,
-          procedureName: partnerProcs.join(', '),
-          appointmentDate: input.appointmentDate,
-          appointmentTime: input.appointmentTime,
-          notes: input.notes?.trim() ?? '',
-        },
-        client,
-      );
-
-      const updatedCurrent = (
-        await execute<DbReturnRequestRow>(
-          `UPDATE return_requests
-           SET procedures_json = $1, proposed_date = $2, proposed_time = $3,
-               approved_by_professional = 1, status = 'confirmed', appointment_id = $4, updated_at = $5
-           WHERE id = $6 RETURNING *`,
-          [
-            JSON.stringify(cleanedProcedures),
-            input.appointmentDate,
-            input.appointmentTime,
-            ownAppt.id,
-            now,
-            current.id,
-          ],
-          client,
-        )
-      ).rows[0];
-
-      const updatedPartner = (
-        await execute<DbReturnRequestRow>(
-          `UPDATE return_requests
-           SET proposed_date = $1, proposed_time = $2,
-               approved_by_professional = 1, status = 'confirmed', appointment_id = $3, updated_at = $4
-           WHERE id = $5 RETURNING *`,
-          [
-            input.appointmentDate,
-            input.appointmentTime,
-            partnerAppt.id,
-            now,
-            partner.id,
-          ],
-          client,
-        )
-      ).rows[0];
-
-      if (current.source_attendance_id) {
-        await execute(
-          "UPDATE attendances SET return_status = 'confirmed', updated_at = $1 WHERE id = $2",
-          [now, current.source_attendance_id],
-          client,
-        );
-      }
-
-      for (const recipient of ['lais', 'duda'] as Professional[]) {
-        const isCurrent = recipient === current.professional;
-        await insertDbNotification(
-          client,
-          {
-            recipient,
-            type: 'joint_approved',
-            title: `Agendamento conjunto confirmado · ${current.client_name}`,
-            message: `Laís e Duda aprovaram o horário conjunto de ${current.client_name} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}.`,
-            requestTypeLabel: 'Confirmação de agendamento conjunto',
-            clientName: current.client_name,
-            procedures: isCurrent ? cleanedProcedures : partnerProcs,
-            desiredDate: input.appointmentDate,
-            desiredTime: input.appointmentTime,
-            isJoint: true,
-            relatedReturnRequestId: isCurrent ? current.id : partner.id,
-            relatedAppointmentId: isCurrent ? ownAppt.id : partnerAppt.id,
-            jointGroupId: current.joint_group_id,
-            targetTab: 'agenda',
-            targetDate: input.appointmentDate,
-            targetProfessional: recipient,
-            createdAt: now,
-          },
-          pendingNotifications,
-        );
-      }
-
-      return {
-        status: 'confirmed' as ReturnRequestStatus,
-        request: mapReturnRequestRow(updatedCurrent, updatedPartner),
-        appointment: ownAppt,
-      };
-    }
+    const ownAppt = await createAgendaAppointment(
+      {
+        professional: current.professional,
+        sourceAttendanceId: current.source_attendance_id,
+        jointGroupId: current.joint_group_id,
+        clientName: current.client_name,
+        whatsapp: current.whatsapp,
+        whatsappDigits: current.whatsapp_digits,
+        procedureName: input.procedureName.trim(),
+        appointmentDate: input.appointmentDate,
+        appointmentTime: input.appointmentTime,
+        notes: input.notes?.trim() ?? '',
+      },
+      client,
+    );
 
     const updatedCurrent = (
       await execute<DbReturnRequestRow>(
         `UPDATE return_requests
          SET procedures_json = $1, proposed_date = $2, proposed_time = $3,
-             approved_by_professional = 1, status = 'pending_partner', updated_at = $4
-         WHERE id = $5 RETURNING *`,
+             approved_by_professional = 1, status = 'confirmed', appointment_id = $4, updated_at = $5
+         WHERE id = $6 RETURNING *`,
         [
           JSON.stringify(cleanedProcedures),
           input.appointmentDate,
           input.appointmentTime,
+          ownAppt.id,
           now,
           current.id,
         ],
@@ -2926,39 +2725,38 @@ export async function approveReturnRequest(input: {
       )
     ).rows[0];
 
-    const updatedPartner = (
-      await execute<DbReturnRequestRow>(
-        `UPDATE return_requests
-         SET proposed_date = $1, proposed_time = $2,
-             approved_by_professional = 0, status = 'waiting', updated_at = $3
-         WHERE id = $4 RETURNING *`,
-        [input.appointmentDate, input.appointmentTime, now, partner.id],
+    const partnerConfirmed = partner.status === 'confirmed';
+    if (current.source_attendance_id && partnerConfirmed) {
+      await execute(
+        "UPDATE attendances SET return_status = 'confirmed', updated_at = $1 WHERE id = $2",
+        [now, current.source_attendance_id],
         client,
-      )
-    ).rows[0];
+      );
+    }
 
-    const isCounterProposal =
-      partner.proposed_date !== null && partner.proposed_time !== null;
     await insertDbNotification(
       client,
       {
         recipient: partner.professional,
-        type: 'joint_proposed',
-        title: isCounterProposal
-          ? `Novo horário sugerido · ${current.client_name}`
-          : `Aprovação pendente · ${current.client_name}`,
-        message: `${actorProfLabel(current.professional)} ${isCounterProposal ? 'ajustou' : 'sugeriu'} o horário conjunto de ${current.client_name} para ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. Confirme para sincronizar as duas agendas.`,
-        requestTypeLabel: isCounterProposal
-          ? 'Alteração de horário conjunto'
-          : 'Aprovação pela outra profissional',
+        type: 'joint_approved',
+        title: partnerConfirmed
+          ? `Agendamento conjunto confirmado · ${current.client_name}`
+          : `Horário confirmado (${actorProfLabel(current.professional)}) · ${current.client_name}`,
+        message: partnerConfirmed
+          ? `${actorProfLabel(current.professional)} confirmou o horário dela para ${current.client_name} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. As duas agendas estão confirmadas.`
+          : `${actorProfLabel(current.professional)} confirmou o horário dela para ${current.client_name} em ${formatDateBR(input.appointmentDate)} às ${input.appointmentTime}. Combine e confirme o seu horário na agenda.`,
+        requestTypeLabel: partnerConfirmed
+          ? 'Confirmação de agendamento conjunto'
+          : `Horário confirmado pela ${actorProfLabel(current.professional)}`,
         clientName: current.client_name,
         procedures: partnerProcs,
         desiredDate: input.appointmentDate,
         desiredTime: input.appointmentTime,
         isJoint: true,
         relatedReturnRequestId: partner.id,
+        relatedAppointmentId: ownAppt.id,
         jointGroupId: current.joint_group_id,
-        targetTab: 'appointments',
+        targetTab: partnerConfirmed ? 'agenda' : 'appointments',
         targetDate: input.appointmentDate,
         targetProfessional: partner.professional,
         createdAt: now,
@@ -2967,9 +2765,9 @@ export async function approveReturnRequest(input: {
     );
 
     return {
-      status: 'pending_partner' as ReturnRequestStatus,
-      request: mapReturnRequestRow(updatedCurrent, updatedPartner),
-      appointment: null,
+      status: 'confirmed' as ReturnRequestStatus,
+      request: mapReturnRequestRow(updatedCurrent, partner),
+      appointment: ownAppt,
     };
   });
 
@@ -3079,6 +2877,7 @@ export async function updateAgendaAppointment(
   actorProfessional?: Professional,
 ): Promise<AgendaAppointment | null> {
   const now = new Date().toISOString();
+  const actorProfLabel = (p: Professional) => (p === 'lais' ? 'Laís' : 'Duda');
 
   if (!isDatabaseConfigured()) {
     const existing = memoryAgendaAppointments.get(id);
@@ -3096,29 +2895,12 @@ export async function updateAgendaAppointment(
           a.status === 'confirmed',
       );
       if (partnerAppt) {
-        const partnerOwner = await findConfirmedSlotOwner(
-          partnerAppt.professional,
-          updates.appointmentDate,
-          updates.appointmentTime,
-          partnerAppt.id,
-        );
-        if (partnerOwner) {
-          throw new Error(
-            `CONFLICT:Não foi possível remarcar porque a outra profissional já possui agendamento (${partnerOwner.clientName}) às ${updates.appointmentTime}.`,
-          );
-        }
-        memoryAgendaAppointments.set(partnerAppt.id, {
-          ...partnerAppt,
-          appointmentDate: updates.appointmentDate,
-          appointmentTime: updates.appointmentTime,
-          updatedAt: now,
-        });
         notifiedPartner = true;
         addMemoryNotification({
           recipient: partnerAppt.professional,
           type: 'joint_updated',
-          title: `Horário conjunto remarcado · ${existing.clientName}`,
-          message: `O agendamento conjunto de ${existing.clientName} foi sincronizado para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
+          title: `Horário conjunto atualizado · ${existing.clientName}`,
+          message: `${actorProfLabel(existing.professional)} atualizou o horário dela no atendimento conjunto de ${existing.clientName} para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
           requestTypeLabel: 'Alteração de data/horário (conjunto)',
           clientName: updates.clientName,
           procedures: [partnerAppt.procedureName],
@@ -3196,33 +2978,14 @@ export async function updateAgendaAppointment(
       );
       const partnerRow = partnerRes.rows[0];
       if (partnerRow) {
-        const partnerOwner = await findConfirmedSlotOwner(
-          partnerRow.professional,
-          updates.appointmentDate,
-          updates.appointmentTime,
-          partnerRow.id,
-          client,
-        );
-        if (partnerOwner) {
-          throw new Error(
-            `CONFLICT:Não foi possível remarcar porque a outra profissional já possui agendamento (${partnerOwner.clientName}) às ${updates.appointmentTime}.`,
-          );
-        }
-        await execute(
-          `UPDATE agenda_appointments
-           SET appointment_date = $1, appointment_time = $2, updated_at = $3
-           WHERE id = $4`,
-          [updates.appointmentDate, updates.appointmentTime, now, partnerRow.id],
-          client,
-        );
         notifiedPartner = true;
         await insertDbNotification(
           client,
           {
             recipient: partnerRow.professional,
             type: 'joint_updated',
-            title: `Horário conjunto remarcado · ${existing.clientName}`,
-            message: `O agendamento conjunto de ${existing.clientName} foi sincronizado para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
+            title: `Horário conjunto atualizado · ${existing.clientName}`,
+            message: `${actorProfLabel(existing.professional)} atualizou o horário dela no atendimento conjunto de ${existing.clientName} para ${formatDateBR(updates.appointmentDate)} às ${updates.appointmentTime}.`,
             requestTypeLabel: 'Alteração de data/horário (conjunto)',
             clientName: updates.clientName,
             procedures: [partnerRow.procedure_name],

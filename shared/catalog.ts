@@ -6,6 +6,7 @@ export type ReturnOption =
   | '15_days'
   | '20_days'
   | '25_days'
+  | '30_days'
   | 'to_arrange'
   | 'specific_date'
   | 'no_schedule';
@@ -110,26 +111,112 @@ export const LAIS_SERVICES: ServiceItem[] = [
 
 export const TIME_SLOTS: string[] = ['Manhã', 'Tarde', 'Noite'];
 
+export const RETURN_PERIOD_OPTIONS = [
+  'Manhã',
+  'Tarde',
+  'Noite',
+  'Qualquer período',
+] as const;
+
+export type ReturnPeriod = (typeof RETURN_PERIOD_OPTIONS)[number];
+
+export const RETURN_HOUR_OPTIONS_BY_PERIOD: Record<ReturnPeriod, string[]> = {
+  Manhã: ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30'],
+  Tarde: [
+    '12:00',
+    '12:30',
+    '13:00',
+    '13:30',
+    '14:00',
+    '14:30',
+    '15:00',
+    '15:30',
+    '16:00',
+    '16:30',
+    '17:00',
+    '17:30',
+  ],
+  Noite: ['18:00', '18:30', '19:00', '19:30', '20:00'],
+  'Qualquer período': [
+    '08:00',
+    '08:30',
+    '09:00',
+    '09:30',
+    '10:00',
+    '10:30',
+    '11:00',
+    '11:30',
+    '12:00',
+    '12:30',
+    '13:00',
+    '13:30',
+    '14:00',
+    '14:30',
+    '15:00',
+    '15:30',
+    '16:00',
+    '16:30',
+    '17:00',
+    '17:30',
+    '18:00',
+    '18:30',
+    '19:00',
+    '19:30',
+    '20:00',
+  ],
+};
+
+export function isValidHHMMTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value.trim());
+}
+
+export function formatPreferredScheduleSummary(
+  preferredTimes: string[],
+): string | null {
+  if (!Array.isArray(preferredTimes) || preferredTimes.length === 0) {
+    return null;
+  }
+  const period = preferredTimes.find((item) =>
+    (RETURN_PERIOD_OPTIONS as readonly string[]).includes(item),
+  );
+  const hours = preferredTimes.filter((item) => isValidHHMMTime(item));
+  const parts: string[] = [];
+  if (period) parts.push(period);
+  if (hours.length > 0) parts.push(hours.join(', '));
+  if (parts.length === 0) {
+    const fallback = preferredTimes.map((s) => s.trim()).filter(Boolean);
+    return fallback.length > 0 ? fallback.join(', ') : null;
+  }
+  return parts.join(' · ');
+}
+
 export interface ReturnOptionMeta {
   value: ReturnOption;
   label: string;
   days: number | null;
 }
 
-export const DUDA_RETURN_OPTIONS: ReturnOptionMeta[] = [
+export const STUDIO_RETURN_OPTIONS: ReturnOptionMeta[] = [
   { value: '15_days', label: '15 dias', days: 15 },
   { value: '20_days', label: '20 dias', days: 20 },
   { value: '25_days', label: '25 dias', days: 25 },
-  { value: 'to_arrange', label: 'Prefiro combinar outra data', days: null },
+  { value: '30_days', label: '30 dias', days: 30 },
+  {
+    value: 'specific_date',
+    label: 'Escolher uma data específica',
+    days: null,
+  },
+  {
+    value: 'to_arrange',
+    label: 'Prefiro combinar outra data',
+    days: null,
+  },
   { value: 'no_schedule', label: 'Não desejo agendar no momento', days: null },
 ];
 
-export const LAIS_RETURN_OPTIONS: ReturnOptionMeta[] = [
-  { value: '15_days', label: '15 dias', days: 15 },
-  { value: '20_days', label: '20 dias', days: 20 },
-  { value: 'to_arrange', label: 'Dia a combinar', days: null },
-  { value: 'no_schedule', label: 'Não desejo agendar no momento', days: null },
-];
+export const DUDA_RETURN_OPTIONS: ReturnOptionMeta[] = STUDIO_RETURN_OPTIONS;
+
+export const LAIS_RETURN_OPTIONS: ReturnOptionMeta[] = STUDIO_RETURN_OPTIONS;
 
 export type ServiceCategoryId =
   | 'extensao_cilios'
@@ -260,7 +347,7 @@ export function getReturnOptionLabel(
   professional?: Professional,
 ): string {
   if (option === 'specific_date') {
-    return 'Data e horário específicos';
+    return 'Data específica';
   }
   const list =
     professional === 'lais' ? LAIS_RETURN_OPTIONS : DUDA_RETURN_OPTIONS;

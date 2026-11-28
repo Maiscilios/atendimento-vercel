@@ -1,5 +1,9 @@
 import * as webpush from 'web-push';
-import { formatDateBR, type Professional } from '../shared/catalog.ts';
+import {
+  formatDateBR,
+  isValidHHMMTime,
+  type Professional,
+} from '../shared/catalog.ts';
 import type { StudioNotification } from '../shared/panelTypes.ts';
 import {
   deletePushSubscriptionByEndpoint,
@@ -123,7 +127,9 @@ export function buildWebPushPayload(notification: StudioNotification): string {
   }
   if (notification.desiredDate) {
     const timeSuffix = notification.desiredTime
-      ? ` às ${notification.desiredTime}`
+      ? isValidHHMMTime(notification.desiredTime)
+        ? ` às ${notification.desiredTime}`
+        : ` (${notification.desiredTime})`
       : '';
     parts.push(`Data: ${formatDateBR(notification.desiredDate)}${timeSuffix}`);
   }

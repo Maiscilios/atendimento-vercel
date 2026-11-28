@@ -27,6 +27,7 @@ import {
   getBrazilTodayISO,
   getLocalDateISO,
   getReturnOptionLabel,
+  isValidHHMMTime,
   type AttendanceRecord,
 } from '../../../shared/catalog';
 import type {
@@ -623,17 +624,20 @@ export function DudaAdminHubTab({
                   const isPendingPartner = item.status === 'pending_partner';
                   const targetDate = item.proposedDate || item.returnDate;
                   const requestedTime = item.proposedTime || item.desiredTime;
+                  const formattedTimeInMsg = requestedTime
+                    ? isValidHHMMTime(requestedTime)
+                      ? ` às ${requestedTime}`
+                      : ` (${requestedTime})`
+                    : '';
                   const message = targetDate
-                    ? `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vi sua solicitação com a Duda para ${formatDateBR(targetDate)}${requestedTime ? ` às ${requestedTime}` : ''}. Vamos confirmar seu horário?`
+                    ? `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vi sua solicitação com a Duda para ${formatDateBR(targetDate)}${formattedTimeInMsg}. Vamos confirmar seu horário?`
                     : `Olá ${item.clientName}! Aqui é do estúdio MAIS CÍLIOS. Vamos combinar a data da sua próxima manutenção com a Duda?`;
 
                   const statusLabel = isConfirmed
                     ? 'Confirmado'
                     : isPendingPartner
-                      ? 'Aguardando aprovação da Laís'
-                      : item.isJoint && item.partner?.approvedByProfessional
-                        ? 'Aguardando aprovação da Duda'
-                        : 'Aguardando confirmação';
+                      ? 'Aguardando Laís'
+                      : 'Aguardando confirmação';
 
                   const requiresDudaPanelApproval = item.isJoint;
 
@@ -693,7 +697,9 @@ export function DudaAdminHubTab({
                           </span>
                           {item.returnDate && (
                             <span className="tabular-nums">
-                              Data prevista:{' '}
+                              {item.returnOption === 'specific_date'
+                                ? 'Data escolhida:'
+                                : 'Data prevista:'}{' '}
                               <strong className="text-brand-strong">
                                 {formatDateBR(item.returnDate)}
                               </strong>
@@ -701,7 +707,9 @@ export function DudaAdminHubTab({
                           )}
                           {item.desiredTime && (
                             <span className="tabular-nums">
-                              Horário desejado:{' '}
+                              {isValidHHMMTime(item.desiredTime)
+                                ? 'Horário desejado:'
+                                : 'Preferência:'}{' '}
                               <strong className="text-brand-strong">
                                 {item.desiredTime}
                               </strong>
@@ -709,7 +717,7 @@ export function DudaAdminHubTab({
                           )}
                           {item.proposedDate && item.proposedTime && (
                             <span className="tabular-nums">
-                              Horário sincronizado:{' '}
+                              Horário confirmado:{' '}
                               <strong className="text-brand-strong">
                                 {formatDateBR(item.proposedDate)} às {item.proposedTime}
                               </strong>
@@ -731,15 +739,15 @@ export function DudaAdminHubTab({
                               {item.partner.procedures.join(', ')}
                             </p>
                             <p>
-                              Status da Laís:{' '}
+                              Status / horário da Laís:{' '}
                               <strong className="text-text-primary">
-                                {item.partner.status === 'confirmed'
-                                  ? 'Confirmado'
-                                  : item.partner.approvedByProfessional &&
-                                      item.partner.proposedDate &&
-                                      item.partner.proposedTime
-                                    ? `Aprovou ${formatDateBR(item.partner.proposedDate)} às ${item.partner.proposedTime}`
-                                    : 'Aguardando aprovação'}
+                                {item.partner.status === 'confirmed' &&
+                                item.partner.proposedDate &&
+                                item.partner.proposedTime
+                                  ? `Confirmado para ${formatDateBR(item.partner.proposedDate)} às ${item.partner.proposedTime}`
+                                  : item.partner.status === 'confirmed'
+                                    ? 'Confirmado'
+                                    : 'Aguardando confirmação dela'}
                               </strong>
                             </p>
                           </div>
@@ -1522,7 +1530,11 @@ export function DudaAdminHubTab({
                     <p className="text-xs sm:text-sm text-text-secondary tabular-nums">
                       <strong className="text-text-primary">Data desejada:</strong>{' '}
                       {formatDateBR(notif.desiredDate)}
-                      {notif.desiredTime ? ` às ${notif.desiredTime}` : ''}
+                      {notif.desiredTime
+                        ? isValidHHMMTime(notif.desiredTime)
+                          ? ` às ${notif.desiredTime}`
+                          : ` (${notif.desiredTime})`
+                        : ''}
                     </p>
                   )}
 
